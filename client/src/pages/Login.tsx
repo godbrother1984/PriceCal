@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 
-const Login: React.FC = () => {
+// (ใหม่) เพิ่ม Props interface เพื่อรับฟังก์ชัน onLoginSuccess
+interface LoginProps {
+  onLoginSuccess: () => void;
+}
+
+const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('admin');
   const [error, setError] = useState('');
@@ -18,11 +23,10 @@ const Login: React.FC = () => {
       if (!response.ok) {
         throw new Error('Invalid credentials');
       }
-
-      const data = await response.json();
-      // ในระบบจริง เราจะเก็บ token และ redirect ผู้ใช้
-      alert(`Login successful! Welcome, ${data.user.name}.`);
-      console.log('Received token:', data.token);
+      
+      // (ใหม่) เมื่อ Backend ตอบกลับว่า Login ถูกต้อง
+      // ให้เรียกฟังก์ชัน onLoginSuccess ที่ได้รับมาจาก App.tsx
+      onLoginSuccess();
 
     } catch (err) {
       setError('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');

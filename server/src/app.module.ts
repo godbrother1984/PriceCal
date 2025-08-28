@@ -6,6 +6,8 @@ import { AuthService } from './auth/auth.service';
 import { MockDataController } from './mock-data/mock-data.controller';
 import { MockDataService } from './mock-data/mock-data.service';
 import { SetupController } from './setup/setup.controller';
+import { PricingController } from './pricing/pricing.controller'; // <-- Add this
+import { PricingService } from './pricing/pricing.service'; // <-- Add this
 
 @Module({
   imports: [],
@@ -13,12 +15,14 @@ import { SetupController } from './setup/setup.controller';
     AppController,
     AuthController,
     MockDataController,
-    SetupController
+    SetupController,
+    PricingController, // <-- Add this
   ],
   providers: [
     AppService,
     AuthService,
-    MockDataService
+    MockDataService,
+    PricingService, // <-- Add this
   ],
 })
 export class AppModule {}
