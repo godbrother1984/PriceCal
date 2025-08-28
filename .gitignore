@@ -21372,3 +21372,13 @@ server/dist/src/mock-data/mock-data.service.js.map
 server/dist/src/setup/setup.controller.d.ts
 server/dist/src/setup/setup.controller.js
 server/dist/src/setup/setup.controller.js.map
+client/node_modules/.vite/deps/_metadata.json
+client/node_modules/.vite/deps/chunk-3ON3CNAS.js
+client/node_modules/.vite/deps/chunk-3ON3CNAS.js.map
+client/node_modules/.vite/deps/package.json
+client/node_modules/.vite/deps/react_jsx-dev-runtime.js
+client/node_modules/.vite/deps/react_jsx-dev-runtime.js.map
+client/node_modules/.vite/deps/react-dom_client.js
+client/node_modules/.vite/deps/react-dom_client.js.map
+client/node_modules/.vite/deps/react.js
+client/node_modules/.vite/deps/react.js.map

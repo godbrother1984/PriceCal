@@ -37,6 +37,8 @@ const SetupWizard: React.FC = () => {
       }
 
       await response.json();
+      // --- EDIT: Save setup status to localStorage ---
+      localStorage.setItem('setupComplete', 'true');
       handleNext(); // Go to the final step on success
     } catch (err) {
       setError('การติดตั้งล้มเหลว กรุณาตรวจสอบ Backend Server');

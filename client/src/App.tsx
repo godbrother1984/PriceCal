@@ -3,7 +3,8 @@ import Login from './pages/Login';
 import SetupWizard from './pages/SetupWizard';
 
 const App: React.FC = () => {
-  const isInitialSetupDone = false; // <-- ตรวจสอบว่าค่าเป็น false
+  // --- EDIT: Check setup status from localStorage ---
+  const isInitialSetupDone = localStorage.getItem('setupComplete') === 'true';
 
   if (!isInitialSetupDone) {
     return <SetupWizard />;
