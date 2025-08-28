@@ -1,33 +1,45 @@
 import React, { useState } from 'react';
 import PriceRequestList from '../../pages/PriceRequestList';
-import CreateRequest from '../../pages/CreateRequest'; // (ใหม่) Import หน้าฟอร์ม
+import CreateRequest from '../../pages/CreateRequest';
+import MasterData from '../../pages/MasterData';
 
-// (อัปเดต) เพิ่ม 'create-request' เข้าไปใน Type
 type Page = 'dashboard' | 'requests' | 'create-request' | 'master-data' | 'reports';
 
 const MainLayout: React.FC = () => {
   const [activePage, setActivePage] = useState<Page>('requests');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
 
   const navigateTo = (page: Page) => {
     setActivePage(page);
+    if (page === 'create-request') {
+      setEditingRequestId(null);
+    }
     if (window.innerWidth < 1024) {
       setIsSidebarOpen(false);
     }
   };
 
+  const handleEditRequest = (requestId: string) => {
+    setEditingRequestId(requestId);
+    setActivePage('create-request');
+  };
+
   const renderPage = () => {
     switch (activePage) {
       case 'requests':
-        // (อัปเดต) ส่งฟังก์ชัน navigateTo เข้าไปเพื่อให้ปุ่ม "สร้าง" ทำงานได้
-        return <PriceRequestList onNavigate={navigateTo} />;
+        return <PriceRequestList onNavigate={navigateTo} onEdit={handleEditRequest} />;
       case 'create-request':
-        // (ใหม่) เมื่อ activePage เป็น 'create-request' ให้แสดงฟอร์ม
-        return <CreateRequest onCancel={() => navigateTo('requests')} />;
+        return <CreateRequest 
+                  onCancel={() => navigateTo('requests')} 
+                  requestId={editingRequestId}
+               />;
+      case 'master-data':
+        return <MasterData />;
       case 'dashboard':
         return <div><h1 className="text-3xl font-bold">Dashboard</h1></div>;
       default:
-        return <PriceRequestList onNavigate={navigateTo} />;
+        return <PriceRequestList onNavigate={navigateTo} onEdit={handleEditRequest} />;
     }
   };
 
@@ -55,6 +67,9 @@ const MainLayout: React.FC = () => {
           </a>
           <a href="#" onClick={() => navigateTo('requests')} className={`flex items-center px-4 py-2 rounded-lg ${activePage === 'requests' || activePage === 'create-request' ? 'bg-blue-100 text-blue-600 font-semibold' : 'text-slate-700 hover:bg-slate-100'}`}>
             Price Requests
+          </a>
+          <a href="#" onClick={() => navigateTo('master-data')} className={`flex items-center px-4 py-2 rounded-lg ${activePage === 'master-data' ? 'bg-blue-100 text-blue-600 font-semibold' : 'text-slate-700 hover:bg-slate-100'}`}>
+            Master Data
           </a>
         </nav>
       </aside>

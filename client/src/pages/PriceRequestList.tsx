@@ -9,12 +9,12 @@ interface PriceRequest {
   createdAt: string;
 }
 
-// (ใหม่) เพิ่ม Props interface เพื่อรับฟังก์ชัน onNavigate
 interface PriceRequestListProps {
   onNavigate: (page: 'create-request') => void;
+  onEdit: (requestId: string) => void; // NEW: Prop to handle editing
 }
 
-const PriceRequestList: React.FC<PriceRequestListProps> = ({ onNavigate }) => {
+const PriceRequestList: React.FC<PriceRequestListProps> = ({ onNavigate, onEdit }) => {
   const [requests, setRequests] = useState<PriceRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -22,7 +22,9 @@ const PriceRequestList: React.FC<PriceRequestListProps> = ({ onNavigate }) => {
     const fetchRequests = async () => {
       try {
         const response = await fetch('http://localhost:3000/mock-data/requests');
-        if (!response.ok) throw new Error('Failed to fetch data');
+        if (!response.ok) {
+          throw new Error('Failed to fetch data');
+        }
         const data = await response.json();
         setRequests(data);
       } catch (error) {
@@ -31,15 +33,20 @@ const PriceRequestList: React.FC<PriceRequestListProps> = ({ onNavigate }) => {
         setIsLoading(false);
       }
     };
+
     fetchRequests();
   }, []);
 
   const getStatusBadge = (status: PriceRequest['status']) => {
     switch (status) {
-      case 'Approved': return <span className="px-2.5 py-1 text-xs font-medium text-green-800 bg-green-100 rounded-full">Approved</span>;
-      case 'Pending': return <span className="px-2.5 py-1 text-xs font-medium text-orange-800 bg-orange-100 rounded-full">Pending</span>;
-      case 'Rejected': return <span className="px-2.5 py-1 text-xs font-medium text-red-800 bg-red-100 rounded-full">Rejected</span>;
-      default: return null;
+      case 'Approved':
+        return <span className="px-2.5 py-1 text-xs font-medium text-green-800 bg-green-100 rounded-full">Approved</span>;
+      case 'Pending':
+        return <span className="px-2.5 py-1 text-xs font-medium text-orange-800 bg-orange-100 rounded-full">Pending</span>;
+      case 'Rejected':
+        return <span className="px-2.5 py-1 text-xs font-medium text-red-800 bg-red-100 rounded-full">Rejected</span>;
+      default:
+        return null;
     }
   };
 
@@ -53,10 +60,9 @@ const PriceRequestList: React.FC<PriceRequestListProps> = ({ onNavigate }) => {
           <p className="text-slate-500">จัดการและติดตามสถานะคำขอราคา</p>
         </div>
         <div>
-          {/* (อัปเดต) ทำให้ปุ่มนี้ทำงานได้จริง */}
           <button 
             onClick={() => onNavigate('create-request')}
-            className="w-full sm:w-auto bg-blue-600 text-white font-semibold px-5 py-2.5 rounded-lg shadow-sm hover:bg-blue-700 transition-colors duration-200 flex items-center justify-center"
+            className="w-full sm:w-auto bg-blue-600 text-white font-semibold px-5 py-2.5 rounded-lg shadow-sm hover:bg-blue-700"
           >
             สร้างคำขอราคาใหม่
           </button>
@@ -85,7 +91,11 @@ const PriceRequestList: React.FC<PriceRequestListProps> = ({ onNavigate }) => {
                   <td className="px-6 py-4">{req.customerName}</td>
                   <td className="px-6 py-4 hidden md:table-cell">{req.createdBy}</td>
                   <td className="px-6 py-4">{getStatusBadge(req.status)}</td>
-                  <td className="px-6 py-4 text-right">...</td>
+                  <td className="px-6 py-4 text-right">
+                    <button onClick={() => onEdit(req.id)} className="text-blue-600 hover:text-blue-800 font-medium">
+                      Edit
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
