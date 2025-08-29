@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import api from '../services/api'; // Import central api service
 
 // --- Interfaces ---
-interface Customer { id: string; name: string; }
 interface CustomerGroup { id: string; name: string; type: string; description: string; }
 interface CustomerMapping { id: string; customerId: string; customerName: string; customerGroupId: string; }
+type MasterDataType = CustomerGroup | CustomerMapping | any;
 
-// --- Reusable Searchable Select Component ---
+// --- Reusable Searchable Select Component (FIXED: Added missing component) ---
 const SearchableSelect = ({ endpoint, value, onChange, displayField = 'name' }: { endpoint: string, value: string, onChange: (id: string) => void, displayField?: string }) => {
   const [items, setItems] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -14,8 +15,7 @@ const SearchableSelect = ({ endpoint, value, onChange, displayField = 'name' }: 
   useEffect(() => {
     const fetchItems = async () => {
       try {
-        const res = await fetch(`http://localhost:3000/mock-data/${endpoint}`);
-        const data = await res.json();
+        const { data } = await api.get(`/mock-data/${endpoint}`);
         setItems(data);
         const selectedItem = data.find((item: any) => item.id === value);
         if (selectedItem) {
@@ -31,484 +31,374 @@ const SearchableSelect = ({ endpoint, value, onChange, displayField = 'name' }: 
   }, [endpoint, value, displayField]);
 
   const filteredItems = searchTerm
-    ? items.filter(item => item[displayField] && item[displayField].toLowerCase().includes(searchTerm.toLowerCase()))
-    : [];
-
-  const handleSelect = (item: any) => {
-    onChange(item.id);
-    setSearchTerm(item[displayField]);
-    setShowDropdown(false);
-  };
+    ? items.filter(item => item[displayField]?.toLowerCase().includes(searchTerm.toLowerCase()))
+    : items;
 
   return (
-    <div className="relative">
+    <div className="relative w-full">
       <input
         type="text"
         value={searchTerm}
-        onChange={(e) => {
+        onChange={e => {
           setSearchTerm(e.target.value);
-          onChange('');
           setShowDropdown(true);
+          onChange(''); // Clear selection when user types
         }}
         onFocus={() => setShowDropdown(true)}
-        onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
-        className="w-full p-2 border border-slate-300 rounded mt-1"
+        onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+        className="w-full bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-lg p-2.5"
         autoComplete="off"
       />
-      {showDropdown && searchTerm && filteredItems.length > 0 && (
+      {showDropdown && (
         <ul className="absolute z-10 w-full bg-white border border-slate-300 rounded-lg mt-1 max-h-60 overflow-y-auto shadow-lg">
-          {filteredItems.map(item => (
-            <li key={item.id} onMouseDown={() => handleSelect(item)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer">
-              {item[displayField]}
+          {filteredItems.length > 0 ? filteredItems.map(item => (
+            <li
+              key={item.id}
+              onClick={() => {
+                onChange(item.id);
+                setSearchTerm(item[displayField]);
+                setShowDropdown(false);
+              }}
+              className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
+            >
+              {item[displayField]} <span className="text-slate-400 text-xs">({item.id})</span>
             </li>
-          ))}
+          )) : <li className="px-4 py-2 text-slate-500">No results found</li>}
         </ul>
       )}
     </div>
   );
 };
 
-// --- Generic Modal for Simple Masters ---
-const ItemModal = ({ isOpen, onClose, onSave, initialData, title, fields }: any) => {
+
+// --- Reusable Modal for Add/Edit Forms ---
+const MasterDataFormModal = ({ isOpen, onClose, onSave, item, columns, title }: { isOpen: boolean, onClose: () => void, onSave: (item: any) => void, item: any | null, columns: any[], title: string }) => {
   const [formData, setFormData] = useState<any>({});
 
   useEffect(() => {
-    if (isOpen) {
-      setFormData(initialData || fields.reduce((acc: any, field: any) => ({ ...acc, [field.key]: '' }), {}));
-    }
-  }, [isOpen, initialData, fields]);
+    setFormData(item || {});
+  }, [item]);
 
   if (!isOpen) return null;
 
-  const handleChange = (key: string, value: string) => {
-    setFormData({ ...formData, [key]: value });
+  const handleInputChange = (key: string, value: any) => {
+    setFormData((prev: any) => ({ ...prev, [key]: value }));
   };
 
-  const handleSave = () => {
-    if (fields.some((field: any) => !formData[field.key])) {
-      alert('Please fill in all fields.');
-      return;
-    }
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
     onSave(formData);
-    onClose();
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-md">
-        <h2 className="text-2xl font-bold mb-6">{title}</h2>
-        <div className="space-y-4">
-          {fields.map((field: any) => (
-            <div key={field.key}>
-              <label className="block text-sm font-medium text-slate-700">{field.label}</label>
-              {field.type === 'lookup' ? (
-                <SearchableSelect
-                  endpoint={field.endpoint}
-                  value={formData[field.key] || ''}
-                  onChange={(id) => handleChange(field.key, id)}
-                  displayField={field.displayField || 'name'}
-                />
-              ) : field.type === 'select' ? (
-                <select
-                  name={field.key}
-                  value={formData[field.key] || ''}
-                  onChange={(e) => handleChange(e.target.name, e.target.value)}
-                  className="w-full p-2 border border-slate-300 rounded mt-1 bg-white"
-                >
-                  <option value="" disabled>Select an option</option>
-                  {field.options.map((option: string) => (
-                    <option key={option} value={option}>{option}</option>
-                  ))}
-                </select>
-              ) : (
-                <input 
-                  type={field.type || 'text'}
-                  name={field.key}
-                  value={formData[field.key] || ''}
-                  onChange={(e) => handleChange(e.target.name, e.target.value)}
-                  className="w-full p-2 border border-slate-300 rounded mt-1" 
-                />
-              )}
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+        <h2 className="text-xl font-semibold mb-4">{item?.id ? 'Edit' : 'Add'} {title}</h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {columns.map(col => (
+            <div key={col.key}>
+              <label className="block text-sm font-medium text-slate-700">{col.label}</label>
+              <input
+                type={col.type || 'text'}
+                value={formData[col.key] || ''}
+                onChange={e => handleInputChange(col.key, e.target.value)}
+                className="mt-1 w-full bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-lg p-2.5"
+                required
+              />
             </div>
           ))}
-        </div>
-        <div className="flex justify-end space-x-4 mt-8">
-          <button onClick={onClose} className="bg-slate-200 text-slate-800 px-4 py-2 rounded-lg hover:bg-slate-300">Cancel</button>
-          <button onClick={handleSave} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">Save</button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// --- Specialized Modal for Customer Mappings (One-to-Many) ---
-const CustomerMappingModal = ({ isOpen, onClose, onSave, groupToEdit, allMappings }: { isOpen: boolean, onClose: () => void, onSave: (data: any) => void, groupToEdit: CustomerGroup | null, allMappings: CustomerMapping[] }) => {
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [selectedCustomerIds, setSelectedCustomerIds] = useState<Set<string>>(new Set());
-  const [customerSearch, setCustomerSearch] = useState('');
-
-  useEffect(() => {
-    if (isOpen) {
-      const fetchCustomers = async () => {
-        try {
-          const custRes = await fetch('http://localhost:3000/mock-data/customers');
-          setCustomers(await custRes.json());
-          
-          if (groupToEdit) {
-            const existingMappedIds = allMappings
-              .filter(m => m.customerGroupId === groupToEdit.id)
-              .map(m => m.customerId);
-            setSelectedCustomerIds(new Set(existingMappedIds));
-          } else {
-            setSelectedCustomerIds(new Set());
-          }
-          setCustomerSearch('');
-
-        } catch (error) {
-          console.error("Failed to fetch customers for mapping", error);
-        }
-      };
-      fetchCustomers();
-    }
-  }, [isOpen, groupToEdit, allMappings]);
-
-  if (!isOpen || !groupToEdit) return null;
-
-  const handleCustomerSelect = (customerId: string) => {
-    const newSelection = new Set(selectedCustomerIds);
-    if (newSelection.has(customerId)) {
-      newSelection.delete(customerId);
-    } else {
-      newSelection.add(customerId);
-    }
-    setSelectedCustomerIds(newSelection);
-  };
-
-  const handleSave = () => {
-    onSave({
-      customerIds: Array.from(selectedCustomerIds),
-      customerGroupId: groupToEdit.id,
-    });
-    onClose();
-  };
-
-  const filteredCustomers = customerSearch
-    ? customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase()))
-    : customers;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-xl">
-        <h2 className="text-2xl font-bold mb-1">Edit Mapping for Group</h2>
-        <p className="text-blue-600 font-semibold mb-6">{groupToEdit.name}</p>
-        <div>
-            <h3 className="font-semibold text-slate-800 mb-2">Select Customers</h3>
-            <input 
-              type="text"
-              placeholder="Search customers..."
-              value={customerSearch}
-              onChange={(e) => setCustomerSearch(e.target.value)}
-              className="w-full p-2 border border-slate-300 rounded-lg mb-2"
-            />
-            <div className="space-y-2 max-h-80 overflow-y-auto border rounded-lg p-2">
-              {filteredCustomers.map(customer => (
-                <label key={customer.id} className={`flex items-center p-3 rounded-lg cursor-pointer ${selectedCustomerIds.has(customer.id) ? 'bg-green-100' : 'hover:bg-slate-100'}`}>
-                  <input
-                    type="checkbox"
-                    checked={selectedCustomerIds.has(customer.id)}
-                    onChange={() => handleCustomerSelect(customer.id)}
-                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <span className="ml-3 text-sm text-slate-700">{customer.name}</span>
-                </label>
-              ))}
-            </div>
+          <div className="flex justify-end gap-4 pt-4">
+            <button type="button" onClick={onClose} className="bg-white text-slate-700 font-semibold px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-100">Cancel</button>
+            <button type="submit" className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-blue-700">Save</button>
           </div>
-        <div className="flex justify-end space-x-4 mt-8">
-          <button onClick={onClose} className="bg-slate-200 text-slate-800 px-4 py-2 rounded-lg hover:bg-slate-300">Cancel</button>
-          <button onClick={handleSave} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">Save Mapping</button>
-        </div>
+        </form>
       </div>
     </div>
   );
 };
 
-// --- Specialized Component for Customer Mappings View ---
-const CustomerMappingView = () => {
-  const [groups, setGroups] = useState<CustomerGroup[]>([]);
-  const [mappings, setMappings] = useState<CustomerMapping[]>([]);
+// --- Reusable Master Data Table Component (CRUD Enabled) ---
+const MasterDataTable = ({ title, endpoint, columns }: { title: string, endpoint: string, columns: any[] }) => {
+  const [data, setData] = useState<MasterDataType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingGroup, setEditingGroup] = useState<CustomerGroup | null>(null);
+  const [editingItem, setEditingItem] = useState<MasterDataType | null>(null);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [groupRes, mappingRes] = await Promise.all([
-        fetch('http://localhost:3000/mock-data/customer-groups'),
-        fetch('http://localhost:3000/mock-data/customer-mappings')
-      ]);
-      setGroups(await groupRes.json());
-      setMappings(await mappingRes.json());
+      const response = await api.get(`/mock-data/${endpoint}`);
+      setData(response.data);
     } catch (error) {
-      console.error("Failed to fetch mapping data:", error);
+      console.error(`Failed to fetch ${endpoint}`, error);
     } finally {
       setIsLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const handleOpenModal = (group: CustomerGroup) => {
-    setEditingGroup(group);
-    setIsModalOpen(true);
-  };
-
-  const handleSaveMapping = async (mappingData: { customerIds: string[], customerGroupId: string }) => {
-    try {
-        await fetch(`http://localhost:3000/mock-data/customer-mappings/${mappingData.customerGroupId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ customerIds: mappingData.customerIds }),
-        });
-        fetchData(); // Refresh data
-    } catch (error) {
-        console.error("Failed to save mapping:", error);
-    }
-  };
-
-  if (isLoading) return <div>Loading Customer Mappings...</div>;
-
-  return (
-    <div>
-      <CustomerMappingModal 
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSave={handleSaveMapping}
-        groupToEdit={editingGroup}
-        allMappings={mappings}
-      />
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-semibold text-slate-800">Customer Mappings (Grouped View)</h2>
-      </div>
-      <div className="space-y-6">
-        {groups.filter(g => g.type === 'Standard').map(group => {
-          const mappedCustomers = mappings.filter(m => m.customerGroupId === group.id);
-          return (
-            <div key={group.id} className="bg-white rounded-xl border border-slate-200 p-6">
-              <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="font-bold text-lg text-slate-800">{group.name} <span className="text-sm font-normal text-slate-500">({group.id})</span></h3>
-                    <p className="text-sm text-slate-500 mt-1">{group.description}</p>
-                  </div>
-                  <button onClick={() => handleOpenModal(group)} className="bg-slate-100 text-slate-700 font-semibold px-4 py-2 rounded-lg hover:bg-slate-200 text-sm">
-                    Edit
-                  </button>
-              </div>
-              <div className="mt-4 pl-4 border-l-2 border-slate-200">
-                {mappedCustomers.length > 0 ? (
-                  <ul className="space-y-2">
-                    {mappedCustomers.map(mapping => (
-                      <li key={mapping.id} className="text-sm text-slate-700">{mapping.customerName}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-slate-400 italic">No customers mapped to this group.</p>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
-
-// --- Generic Table Component (for other masters) ---
-const MasterDataTable = ({ title, endpoint, columns }: { title: string, endpoint: string, columns: { key: string, label: string, type?: string, endpoint?: string, displayField?: string, options?: string[] }[] }) => {
-  const [data, setData] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<any | null>(null);
-
-  const fetchData = async () => {
-    try {
-      const response = await fetch(`http://localhost:3000/mock-data/${endpoint}`);
-      if (!response.ok) throw new Error(`Failed to fetch ${endpoint}`);
-      const result = await response.json();
-      setData(result);
-    } catch (error) {
-      console.error(`Failed to fetch ${title}:`, error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    setIsLoading(true);
-    fetchData();
   }, [endpoint]);
 
-  const handleSaveItem = async (item: any) => {
-    const isEditing = !!editingItem;
-    const url = `http://localhost:3000/mock-data/${endpoint}${isEditing ? `/${editingItem.id}` : ''}`;
-    const method = isEditing ? 'PUT' : 'POST';
-    try {
-      await fetch(url, {
-        method: method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(isEditing ? { ...item, id: editingItem.id } : item),
-      });
-      fetchData();
-    } catch (error) {
-      console.error(`Failed to save ${title}:`, error);
-    }
-  };
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
-  const handleDeleteItem = async (itemId: string) => {
-    if (window.confirm('Are you sure you want to delete this item?')) {
-        try {
-            await fetch(`http://localhost:3000/mock-data/${endpoint}/${itemId}`, { method: 'DELETE' });
-            fetchData();
-        } catch (error) {
-            console.error(`Failed to delete ${title}:`, error);
-        }
-    }
-  };
-
-  const openModalToAdd = () => {
-    setEditingItem(null);
-    setIsModalOpen(true);
-  };
-
-  const openModalToEdit = (item: any) => {
+  const handleOpenModal = (item: MasterDataType | null = null) => {
     setEditingItem(item);
     setIsModalOpen(true);
   };
 
-  const filteredData = data.filter(item => 
-    Object.values(item).some(value => 
-      String(value).toLowerCase().includes(searchTerm.toLowerCase())
-    )
-  );
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setEditingItem(null);
+  };
 
-  if (isLoading) return <div>Loading {title}...</div>;
+  const handleSave = async (itemToSave: MasterDataType) => {
+    try {
+      if (itemToSave.id) {
+        await api.put(`/mock-data/${endpoint}/${itemToSave.id}`, itemToSave);
+      } else {
+        await api.post(`/mock-data/${endpoint}`, itemToSave);
+      }
+      fetchData(); // Refresh data
+    } catch (error) {
+      console.error(`Failed to save item to ${endpoint}`, error);
+    } finally {
+      handleCloseModal();
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (window.confirm('Are you sure you want to delete this item?')) {
+      try {
+        await api.delete(`/mock-data/${endpoint}/${id}`);
+        fetchData(); // Refresh data
+      } catch (error) {
+        console.error(`Failed to delete item from ${endpoint}`, error);
+      }
+    }
+  };
 
   return (
     <div>
-      <ItemModal 
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSave={handleSaveItem}
-        initialData={editingItem}
-        title={`${editingItem ? 'Edit' : 'Add New'} ${title}`}
-        fields={columns}
-      />
-      
-      <div className="flex flex-col md:flex-row items-center justify-between mb-6 gap-4">
-        <h2 className="text-2xl font-semibold text-slate-800">{title}</h2>
-        <div className="w-full md:w-auto flex items-center gap-4">
-          <input 
-            type="text"
-            placeholder="Search..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full md:w-64 p-2 border border-slate-300 rounded-lg"
-          />
-          <button onClick={openModalToAdd} className="bg-blue-600 text-white font-semibold px-5 py-2.5 rounded-lg shadow-sm hover:bg-blue-700 flex-shrink-0">
-            Add New
-          </button>
-        </div>
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-xl font-semibold text-slate-800">{title}</h2>
+        <button onClick={() => handleOpenModal()} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold">Add New</button>
       </div>
-      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+      <div className="overflow-x-auto">
         <table className="w-full text-sm text-left text-slate-500">
-          <thead className="text-xs text-slate-700 uppercase bg-slate-50">
-            <tr>
-              {columns.map(col => <th key={col.key} scope="col" className="px-6 py-3">{col.label}</th>)}
-              <th scope="col" className="px-6 py-3 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredData.map((item) => (
-              <tr key={item.id} className="bg-white border-b hover:bg-slate-50">
-                {columns.map(col => <td key={`${item.id}-${col.key}`} className="px-6 py-4">{item[col.key]}</td>)}
-                <td className="px-6 py-4 text-right space-x-4">
-                  <button onClick={() => openModalToEdit(item)} className="text-blue-600 hover:text-blue-800 font-medium">Edit</button>
-                  <button onClick={() => handleDeleteItem(item.id)} className="text-red-600 hover:text-red-800 font-medium">Delete</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
+            <thead className="text-xs text-slate-700 uppercase bg-slate-100">
+                <tr>
+                    {columns.map(col => <th key={col.key} scope="col" className="px-6 py-3">{col.label}</th>)}
+                    <th scope="col" className="px-6 py-3 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr><td colSpan={columns.length + 1} className="text-center p-4">Loading...</td></tr>
+              ) : data.map(item => (
+                  <tr key={item.id} className="bg-white border-b hover:bg-slate-50">
+                      {columns.map(col => <td key={col.key} className="px-6 py-4">{item[col.key]}</td>)}
+                      <td className="px-6 py-4 text-right space-x-4">
+                          <button onClick={() => handleOpenModal(item)} className="font-medium text-blue-600 hover:underline">Edit</button>
+                          <button onClick={() => handleDelete(item.id)} className="font-medium text-red-600 hover:underline">Delete</button>
+                      </td>
+                  </tr>
+              ))}
+            </tbody>
         </table>
       </div>
+      <MasterDataFormModal isOpen={isModalOpen} onClose={handleCloseModal} onSave={handleSave} item={editingItem} columns={columns} title={title} />
     </div>
   );
 };
 
-// --- Main MasterData Component ---
-const MasterData: React.FC = () => {
-  type MasterDataTab = 'customerGroups' | 'customerMappings' | 'fabCost' | 'standardPrices' | 'sellingFactors' | 'lmePrices' | 'exchangeRates';
-  const [activeTab, setActiveTab] = useState<MasterDataTab>('customerGroups');
-  const currencyOptions = ['THB', 'USD', 'JPY'];
 
-  const renderActiveTab = () => {
+// --- Customer Mapping View Component (CRUD Enabled) ---
+const CustomerMappingView: React.FC = () => {
+  const [groupedMappings, setGroupedMappings] = useState<{ [groupName: string]: CustomerMapping[] }>({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  // States for Add Modal
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newMapping, setNewMapping] = useState({ customerId: '', customerGroupId: '' });
+
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const [mappingsRes, groupsRes] = await Promise.all([
+        api.get('/mock-data/customer-mappings'),
+        api.get('/mock-data/customer-groups')
+      ]);
+      const mappingsData: CustomerMapping[] = mappingsRes.data;
+      const groupsData: CustomerGroup[] = groupsRes.data;
+      const groupNameMap = new Map(groupsData.map(g => [g.id, g.name]));
+
+      const grouped = mappingsData.reduce((acc, mapping) => {
+        const groupName = groupNameMap.get(mapping.customerGroupId) || mapping.customerGroupId;
+        if (!acc[groupName]) { acc[groupName] = []; }
+        acc[groupName].push(mapping);
+        return acc;
+      }, {} as { [groupName: string]: CustomerMapping[] });
+      setGroupedMappings(grouped);
+    } catch (err) {
+      console.error("Failed to fetch customer mappings", err);
+      setError('Could not load customer mapping data.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const handleRemove = async (mappingId: string) => {
+    if(window.confirm('Are you sure you want to remove this mapping?')) {
+      try {
+        await api.delete(`/mock-data/customer-mappings/${mappingId}`);
+        fetchData(); // Refresh
+      } catch (err) {
+        console.error('Failed to remove mapping', err);
+        alert('Error: Could not remove mapping.');
+      }
+    }
+  };
+
+  const handleAddMapping = async () => {
+    if (!newMapping.customerId || !newMapping.customerGroupId) {
+      alert('Please select both a customer and a group.');
+      return;
+    }
+    try {
+      await api.post('/mock-data/customer-mappings', newMapping);
+      setIsAddModalOpen(false);
+      setNewMapping({ customerId: '', customerGroupId: '' });
+      fetchData(); // Refresh
+    } catch (err) {
+      console.error('Failed to add mapping', err);
+      alert('Error: Could not add mapping.');
+    }
+  };
+  
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-xl font-semibold text-slate-800">Customer Mappings (Grouped View)</h2>
+        <button onClick={() => setIsAddModalOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold">
+          Add New Mapping
+        </button>
+      </div>
+
+      {isLoading && <p className="text-slate-500">Loading mappings...</p>}
+      {error && <p className="text-red-500">{error}</p>}
+      
+      {!isLoading && !error && Object.keys(groupedMappings).length === 0 && (
+          <p className="text-slate-500 italic">No customer mappings found.</p>
+      )}
+
+      <div className="space-y-6">
+        {Object.entries(groupedMappings).map(([groupName, mappings]) => (
+          <div key={groupName}>
+            <h3 className="font-semibold text-slate-800 mb-2 border-b pb-2">{groupName}</h3>
+            <ul className="divide-y divide-slate-200">
+              {mappings.map(mapping => (
+                <li key={mapping.id} className="px-2 py-3 flex justify-between items-center">
+                  <span>{mapping.customerName} <span className="text-slate-400 text-xs font-mono">({mapping.customerId})</span></span>
+                  <button onClick={() => handleRemove(mapping.id)} className="text-xs text-red-600 hover:text-red-800">Remove</button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+
+       {/* Add Mapping Modal */}
+       {isAddModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+            <h2 className="text-xl font-semibold mb-4">Add New Customer Mapping</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Customer</label>
+                <SearchableSelect endpoint="customers" value={newMapping.customerId} onChange={(id: string) => setNewMapping(p => ({...p, customerId: id}))} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Customer Group</label>
+                <SearchableSelect endpoint="customer-groups" value={newMapping.customerGroupId} onChange={(id: string) => setNewMapping(p => ({...p, customerGroupId: id}))} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-4 pt-6">
+              <button type="button" onClick={() => setIsAddModalOpen(false)} className="bg-white text-slate-700 font-semibold px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-100">Cancel</button>
+              <button type="button" onClick={handleAddMapping} className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-blue-700">Add Mapping</button>
+            </div>
+          </div>
+        </div>
+       )}
+    </div>
+  );
+};
+
+
+// --- Main MasterData Page Component ---
+const MasterData: React.FC = () => {
+  const [activeTab, setActiveTab] = useState('customerGroups');
+
+  const renderContent = () => {
     switch (activeTab) {
       case 'customerGroups':
         return <MasterDataTable title="Customer Groups" endpoint="customer-groups" columns={[
-          { key: 'name', label: 'Group Name' }, 
-          { key: 'type', label: 'Type', type: 'select', options: ['Standard', 'Default', 'All'] }, 
-          { key: 'description', label: 'Description' }
+          { key: 'name', label: 'Group Name' },
+          { key: 'description', label: 'Description' },
+          { key: 'type', label: 'Type' }
         ]} />;
       case 'customerMappings':
         return <CustomerMappingView />;
       case 'fabCost':
         return <MasterDataTable title="Fab Cost" endpoint="fab-costs" columns={[
-          { key: 'customerGroupId', label: 'Group ID', type: 'lookup', endpoint: 'customer-groups' }, 
-          { key: 'costValue', label: 'Cost Value', type: 'number' }, 
-          { key: 'currency', label: 'Currency', type: 'select', options: currencyOptions }
+          { key: 'customerGroupId', label: 'Group ID' },
+          { key: 'costValue', label: 'Cost Value' },
+          { key: 'currency', label: 'Currency' }
         ]} />;
       case 'standardPrices':
-        return <MasterDataTable title="Standard Prices" endpoint="standard-prices" columns={[
-          { key: 'rmId', label: 'RM ID', type: 'lookup', endpoint: 'raw-materials' }, 
-          { key: 'price', label: 'Price', type: 'number' }, 
-          { key: 'currency', label: 'Currency', type: 'select', options: currencyOptions }
+         return <MasterDataTable title="Standard Prices" endpoint="standard-prices" columns={[
+            { key: 'rmId', label: 'RM ID' },
+            { key: 'price', label: 'Price' },
+            { key: 'currency', label: 'Currency' }
         ]} />;
       case 'sellingFactors':
         return <MasterDataTable title="Selling Factors" endpoint="selling-factors" columns={[
-          { key: 'pattern', label: 'Pattern' }, 
-          { key: 'factor', label: 'Factor', type: 'number' }
+            { key: 'pattern', label: 'Pattern' },
+            { key: 'factor', label: 'Factor' },
         ]} />;
       case 'lmePrices':
         return <MasterDataTable title="LME Prices" endpoint="lme-prices" columns={[
-          { key: 'customerGroupId', label: 'Group ID', type: 'lookup', endpoint: 'customer-groups' }, 
-          { key: 'itemGroupCode', label: 'Item Group' }, 
-          { key: 'price', label: 'Price', type: 'number' }, 
-          { key: 'currency', label: 'Currency', type: 'select', options: currencyOptions }
+            { key: 'customerGroupId', label: 'Group ID' },
+            { key: 'itemGroupCode', label: 'Item Group' },
+            { key: 'price', label: 'Price' },
+            { key: 'currency', label: 'Currency' }
         ]} />;
       case 'exchangeRates':
         return <MasterDataTable title="Exchange Rates" endpoint="exchange-rates" columns={[
-          { key: 'customerGroupId', label: 'Group ID', type: 'lookup', endpoint: 'customer-groups' }, 
-          { key: 'sourceCurrency', label: 'Source Currency' },
-          { key: 'destinationCurrency', label: 'Destination Currency' },
-          { key: 'rate', label: 'Rate', type: 'number' }
+            { key: 'customerGroupId', label: 'Group ID' },
+            { key: 'sourceCurrency', label: 'Source' },
+            { key: 'destinationCurrency', label: 'Destination' },
+            { key: 'rate', label: 'Rate' },
         ]} />;
       default:
-        return null;
+        return <div>Select a category</div>;
     }
   };
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-900 mb-2">Master Data Management</h1>
-        <p className="text-slate-500">จัดการข้อมูลหลักทั้งหมดของระบบ</p>
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900 mb-2">Master Data Management</h1>
+          <p className="text-slate-500">Manage all master data for the pricing system.</p>
+        </div>
       </div>
-
-      <div className="border-b border-slate-200 mb-8">
-        <nav className="-mb-px flex space-x-6 overflow-x-auto" aria-label="Tabs">
+      
+      <div className="border-b border-slate-200">
+        <nav className="-mb-px flex space-x-8" aria-label="Tabs" style={{overflowX: 'auto'}}>
           <button onClick={() => setActiveTab('customerGroups')} className={`${activeTab === 'customerGroups' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}>
             Customer Groups
           </button>
@@ -533,11 +423,12 @@ const MasterData: React.FC = () => {
         </nav>
       </div>
 
-      <div>
-        {renderActiveTab()}
+      <div className="mt-8">
+        {renderContent()}
       </div>
     </div>
   );
 };
 
 export default MasterData;
+

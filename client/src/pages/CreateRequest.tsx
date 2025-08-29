@@ -1,8 +1,13 @@
+// path: client/src/pages/CreateRequest.tsx
+// version: 2.3 (Data Population Fix)
+// last-modified: 29 สิงหาคม 2568 14:40
+
 import React, { useState, useEffect } from 'react';
 
 // --- Interfaces ---
 interface CreateRequestProps {
   onCancel: () => void;
+  onSuccess: () => void;
   requestId: string | null;
 }
 interface FormData {
@@ -34,7 +39,7 @@ interface RawMaterial {
 }
 
 // --- Main Component ---
-const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, requestId }) => {
+const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requestId }) => {
   const [customerType, setCustomerType] = useState<'existing' | 'new'>('existing');
   const [productType, setProductType] = useState<'existing' | 'new'>('existing');
   const [formData, setFormData] = useState<FormData>({});
@@ -74,15 +79,46 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, requestId }) =>
     
     const fetchRequestData = async (id: string) => {
       console.log("Editing request with ID:", id);
-      // In a real app, you would fetch from `http://localhost:3000/mock-data/requests/${id}`
-      // and then use setFormData, setBoqItems, etc. to populate the form.
+      setIsLoading(true);
+      try {
+        const res = await fetch(`http://localhost:3000/mock-data/requests/${id}`);
+        if (!res.ok) throw new Error('Request not found');
+        const data = await res.json();
+        
+        const initialFormData: FormData = data.formData || {};
+        setFormData(initialFormData);
+        
+        if(data.customerType === 'existing' && initialFormData.customerName) {
+          setCustomerType('existing');
+          setCustomerSearch(initialFormData.customerName);
+        } else {
+          setCustomerType('new');
+        }
+
+        if(data.productType === 'existing' && initialFormData.productName) {
+          setProductType('existing');
+          setProductSearch(initialFormData.productName);
+        } else {
+          setProductType('new');
+        }
+
+        setBoqItems(data.boqItems || []);
+        setCalculationResult(data.calculationResult || null);
+
+      } catch (err) {
+        console.error("Failed to fetch request data", err);
+        setError(`Could not load data for request ${id}.`);
+        onCancel();
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     fetchAllMasterData();
     if (requestId) {
       fetchRequestData(requestId);
     }
-  }, [requestId]);
+  }, [requestId, onCancel]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -142,13 +178,19 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, requestId }) =>
 
     setIsLoading(true);
     try {
-      await fetch(endpoint, {
+      const response = await fetch(endpoint, {
         method: method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ formData, customerType, productType, boqItems, calculationResult }),
       });
+
+      if (!response.ok) {
+         const errorData = await response.json();
+         throw new Error(errorData.message || 'Operation failed');
+      }
+      
       alert(`Price Request ${requestId ? 'Updated' : 'Created'} Successfully!`);
-      onCancel();
+      onSuccess();
     } catch (err) {
       setError(`Failed to ${requestId ? 'update' : 'create'} the price request.`);
     } finally {
@@ -238,11 +280,11 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, requestId }) =>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label htmlFor="newCustomerName" className="block text-sm font-medium text-slate-700 mb-1">ชื่อบริษัท (ชั่วคราว)</label>
-                  <input type="text" id="newCustomerName" name="newCustomerName" onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5" placeholder="เช่น ABC Corporation" />
+                  <input type="text" id="newCustomerName" name="newCustomerName" value={formData.newCustomerName || ''} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5" placeholder="เช่น ABC Corporation" />
                 </div>
                 <div>
                   <label htmlFor="newCustomerContact" className="block text-sm font-medium text-slate-700 mb-1">ผู้ติดต่อ (ชั่วคราว)</label>
-                  <input type="text" id="newCustomerContact" name="newCustomerContact" onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5" placeholder="เช่น คุณสมศรี" />
+                  <input type="text" id="newCustomerContact" name="newCustomerContact" value={formData.newCustomerContact || ''} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5" placeholder="เช่น คุณสมศรี" />
                 </div>
               </div>
             )}
@@ -297,11 +339,11 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, requestId }) =>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label htmlFor="newProductName" className="block text-sm font-medium text-slate-700 mb-1">Part Name</label>
-                    <input type="text" id="newProductName" name="newProductName" onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5" />
+                    <input type="text" id="newProductName" name="newProductName" value={formData.newProductName || ''} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5" />
                   </div>
                   <div>
                     <label htmlFor="newProductDrawing" className="block text-sm font-medium text-slate-700 mb-1">Drawing No.</label>
-                    <input type="text" id="newProductDrawing" name="newProductDrawing" onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5" />
+                    <input type="text" id="newProductDrawing" name="newProductDrawing" value={formData.newProductDrawing || ''} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5" />
                   </div>
               </div>
             )}
@@ -418,3 +460,4 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, requestId }) =>
 };
 
 export default CreateRequest;
+

@@ -1,3 +1,7 @@
+// path: server/src/mock-data/mock-data.service.ts
+// version: 2.3 (Data Consistency Fix)
+// last-modified: 29 สิงหาคม 2568 14:40
+
 import { Injectable, NotFoundException } from '@nestjs/common';
 
 @Injectable()
@@ -23,84 +27,134 @@ export class MockDataService {
   ];
   
   private priceRequests = [
-    { id: 'REQ-00125', customerName: 'Thai Summit Group', productName: 'TS-PART-001', status: 'Approved' as const, createdBy: 'Somchai Jaidee', createdAt: '2025-08-28', costingBy: 'Costing A' },
-    { id: 'REQ-00124', customerName: 'Honda Automobile', productName: 'HN-PART-245 (New)', status: 'Pending' as const, createdBy: 'Thanawat K.', createdAt: '2025-08-27', costingBy: undefined },
-    { id: 'REQ-00123', customerName: 'Toyota Motor', productName: 'TY-PART-889', status: 'Rejected' as const, createdBy: 'Somchai Jaidee', createdAt: '2025-08-26', costingBy: 'Costing B' },
+    { 
+      id: 'REQ-00125', 
+      customerName: 'Thai Summit Group', 
+      productName: 'TS-PART-001', 
+      status: 'Approved' as const, 
+      createdBy: 'Sales 01', 
+      createdAt: '2024-08-28',
+      costingBy: 'Pricer 01',
+      formData: { customerId: 'CUST-001', customerName: 'Thai Summit Group', productId: 'FG-001', productName: 'TS-PART-001' },
+      customerType: 'existing',
+      productType: 'existing',
+      boqItems: [],
+      calculationResult: { basePrice: "1250.00", sellingFactor: 1.25, finalPrice: "1562.50", currency: "THB" },
+    },
+    { 
+      id: 'REQ-00124', 
+      customerName: 'Honda Automobile', 
+      productName: 'HN-PART-245', 
+      status: 'Pending' as const, 
+      createdBy: 'Sales 02', 
+      createdAt: '2024-08-27',
+      costingBy: undefined,
+      formData: { customerId: 'CUST-002', customerName: 'Honda Automobile', productId: 'FG-002', productName: 'HN-PART-245' },
+      customerType: 'existing',
+      productType: 'existing',
+      boqItems: [],
+      calculationResult: null,
+    },
   ];
 
   private customerGroups = [
-    { id: 'CG-001', name: 'Default', type: 'Default', description: 'กลุ่มราคามาตรฐานสำหรับลูกค้าทั่วไป' },
-    { id: 'CG-002', name: 'ALL', type: 'All', description: 'กลุ่มราคาสำหรับวัตถุดิบทั่วไป' },
-    { id: 'CG-003', name: 'Automotive A', type: 'Standard', description: 'กลุ่มลูกค้ายานยนต์ Tier 1' },
-    { id: 'CG-004', name: 'Electronics B', type: 'Standard', description: 'กลุ่มลูกค้าเครื่องใช้ไฟฟ้า' },
+      { id: 'CG-DOM', name: 'Domestic', type: 'Domestic', description: 'ลูกค้าในประเทศ' },
+      { id: 'CG-EXP', name: 'Export', type: 'Export', description: 'ลูกค้าต่างประเทศ' },
   ];
-
+  
   private customerMappings = [
-      { id: 'CM-001', customerId: 'CUST-001', customerName: 'Thai Summit Group', customerGroupId: 'CG-003' },
-      { id: 'CM-002', customerId: 'CUST-003', customerName: 'Toyota Motor', customerGroupId: 'CG-003' },
+      { id: 'CM-001', customerId: 'CUST-001', customerName: 'Thai Summit Group', customerGroupId: 'CG-DOM' },
+      { id: 'CM-002', customerId: 'CUST-002', customerName: 'Honda Automobile', customerGroupId: 'CG-DOM' },
+      { id: 'CM-003', customerId: 'CUST-003', customerName: 'Toyota Motor', customerGroupId: 'CG-DOM' },
   ];
-
+  
   private fabCosts = [
-      { id: 'FC-001', customerGroupId: 'CG-003', costValue: 150.75, currency: 'THB' },
-      { id: 'FC-002', customerGroupId: 'CG-004', costValue: 175.00, currency: 'THB' },
-      { id: 'FC-003', customerGroupId: 'CG-001', costValue: 210.50, currency: 'THB' },
+      { id: 'FC-001', customerGroupId: 'CG-DOM', costValue: 150, currency: 'THB' },
+      { id: 'FC-002', customerGroupId: 'CG-EXP', costValue: 5, currency: 'USD' },
   ];
-
+  
   private standardPrices = [
-      { id: 'SP-001', rmId: 'RM-AL-01', customerGroupId: 'CG-003', price: 120.50, currency: 'USD' },
-      { id: 'SP-002', rmId: 'RM-CU-02', customerGroupId: 'CG-003', price: 250.00, currency: 'USD' },
+      { id: 'SP-001', rmId: 'RM-AL-01', price: 85, currency: 'THB' },
+      { id: 'SP-002', rmId: 'RM-CU-02', price: 300, currency: 'THB' },
   ];
-
+  
   private sellingFactors = [
-      { id: 'SF-001', pattern: 'Pattern A', factor: 1.25 },
-      { id: 'SF-002', pattern: 'Pattern B', factor: 1.35 },
+      { id: 'SF-001', pattern: 'Default', factor: 1.25 },
   ];
-
+  
   private lmePrices = [
-      { id: 'LME-001', customerGroupId: 'CG-002', itemGroupCode: 'AL', price: 2200.50, currency: 'USD' },
-      { id: 'LME-002', customerGroupId: 'CG-002', itemGroupCode: 'CU', price: 8500.00, currency: 'USD' },
+      { id: 'LME-001', customerGroupId: 'CG-EXP', itemGroupCode: 'AL', price: 2200, currency: 'USD' },
   ];
-
+  
   private exchangeRates = [
-      { id: 'ER-001', customerGroupId: 'CG-002', currencyPair: 'USD-THB', rate: 36.55 },
-      { id: 'ER-002', customerGroupId: 'CG-002', currencyPair: 'JPY-THB', rate: 0.25 },
-      { id: 'ER-003', customerGroupId: 'CG-003', currencyPair: 'USD-THB', rate: 36.50 },
+      { id: 'ER-001', customerGroupId: 'CG-EXP', sourceCurrency: 'USD', destinationCurrency: 'THB', rate: 36.5 },
   ];
 
-  // --- Generic update and delete logic ---
-  private updateItem(collection: any[], id: string, itemDto: any) {
+  // --- Helper Methods ---
+  private updateItem(collection: any[], id: string, dto: any) {
     const itemIndex = collection.findIndex(item => item.id === id);
     if (itemIndex === -1) {
-      throw new NotFoundException(`Item with ID ${id} not found.`);
+      throw new NotFoundException(`Item with ID ${id} not found`);
     }
-    const { id: dtoId, ...updateData } = itemDto;
-    collection[itemIndex] = { ...collection[itemIndex], ...updateData };
-    return collection[itemIndex];
+    const updatedItem = { ...collection[itemIndex], ...dto };
+    collection[itemIndex] = updatedItem;
+    return updatedItem;
   }
-
   private deleteItem(collection: any[], id: string) {
     const initialLength = collection.length;
-    const updatedCollection = collection.filter(item => item.id !== id);
-    if (collection.length === initialLength) {
-        throw new NotFoundException(`Item with ID ${id} not found.`);
+    const newCollection = collection.filter(item => item.id !== id);
+    if (newCollection.length === initialLength) {
+      throw new NotFoundException(`Item with ID ${id} not found`);
     }
-    return updatedCollection; 
+    return newCollection;
   }
 
   // --- Price Requests ---
-  findAllRequests() { return this.priceRequests; }
-  addPriceRequest(requestData: any) {
+  findAllRequests() { 
+    return this.priceRequests.map(({ id, customerName, productName, status, createdBy, createdAt, costingBy }) => ({
+      id, customerName, productName, status, createdBy, createdAt, costingBy
+    }));
+  }
+  findOneRequest(id: string) {
+    const request = this.priceRequests.find(r => r.id === id);
+    if (!request) {
+      throw new NotFoundException(`Request with ID ${id} not found`);
+    }
+    return request;
+  }
+  addPriceRequest(requestDto: any) {
+    const newId = `REQ-${String(Date.now()).slice(-5)}`;
     const newRequest = {
-      id: `REQ-${Date.now().toString().slice(-5)}`,
-      customerName: requestData.formData.newCustomerName || requestData.formData.customerName,
-      productName: requestData.formData.newProductName || requestData.formData.productName,
+      id: newId,
+      customerName: requestDto.formData.customerName || requestDto.formData.newCustomerName,
+      productName: requestDto.formData.productName || requestDto.formData.newProductName,
       status: 'Pending' as const,
-      createdBy: 'Current User',
+      createdBy: 'Current User', // Placeholder
       createdAt: new Date().toISOString().split('T')[0],
-      costingBy: undefined,
+      ...requestDto,
     };
     this.priceRequests.unshift(newRequest);
     return newRequest;
+  }
+  updatePriceRequest(id: string, requestDto: any) {
+    const requestIndex = this.priceRequests.findIndex(r => r.id === id);
+    if (requestIndex === -1) {
+      throw new NotFoundException(`Request with ID ${id} not found`);
+    }
+
+    const existingRequest = this.priceRequests[requestIndex];
+    
+    const updatedRequest = {
+      ...existingRequest,
+      ...requestDto,
+      customerName: requestDto.formData.customerName || requestDto.formData.newCustomerName || existingRequest.customerName,
+      productName: requestDto.formData.productName || requestDto.formData.newProductName || existingRequest.productName,
+      id: id,
+    };
+    
+    this.priceRequests[requestIndex] = updatedRequest;
+    console.log('Updated Request:', updatedRequest);
+    return updatedRequest;
   }
 
   // --- Master Data for Search ---
@@ -110,8 +164,8 @@ export class MockDataService {
 
   // --- Customer Groups ---
   findAllCustomerGroups() { return this.customerGroups; }
-  addCustomerGroup(group: any) {
-    const newGroup = { id: `CG-${Date.now()}`, ...group };
+  addCustomerGroup(groupDto: any) {
+    const newGroup = { id: `CG-${Date.now()}`, ...groupDto };
     this.customerGroups.push(newGroup);
     return newGroup;
   }
@@ -177,3 +231,4 @@ export class MockDataService {
     return { message: `Deleted exchange rate with ID ${id}` };
   }
 }
+

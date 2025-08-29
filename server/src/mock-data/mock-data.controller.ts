@@ -1,3 +1,7 @@
+// path: server/src/mock-data/mock-data.controller.ts
+// version: 2.2
+// last-modified: 29 สิงหาคม 2568 14:20
+
 import { Controller, Get, Post, Body, Put, Param, Delete } from '@nestjs/common';
 import { MockDataService } from './mock-data.service';
 
@@ -10,9 +14,21 @@ export class MockDataController {
   getAllRequests() {
     return this.mockDataService.findAllRequests();
   }
+
+  @Get('requests/:id')
+  findOneRequest(@Param('id') id: string) {
+    return this.mockDataService.findOneRequest(id);
+  }
+
   @Post('requests')
   addRequest(@Body() requestDto: any) {
     return this.mockDataService.addPriceRequest(requestDto);
+  }
+
+  // (เพิ่ม) Endpoint ใหม่สำหรับอัปเดต Request ด้วย ID
+  @Put('requests/:id')
+  updateRequest(@Param('id') id: string, @Body() requestDto: any) {
+    return this.mockDataService.updatePriceRequest(id, requestDto);
   }
 
   // --- Master Data for Search ---
@@ -46,7 +62,7 @@ export class MockDataController {
   deleteCustomerGroup(@Param('id') id: string) {
     return this.mockDataService.deleteCustomerGroup(id);
   }
-
+  
   // --- Customer Mappings ---
   @Get('customer-mappings')
   getAllCustomerMappings() {
@@ -88,19 +104,17 @@ export class MockDataController {
   getAllStandardPrices() {
     return this.mockDataService.findAllStandardPrices();
   }
-
   @Get('selling-factors')
   getAllSellingFactors() {
     return this.mockDataService.findAllSellingFactors();
   }
-
   @Get('lme-prices')
   getAllLmePrices() {
     return this.mockDataService.findAllLmePrices();
   }
-
   @Get('exchange-rates')
   getAllExchangeRates() {
     return this.mockDataService.findAllExchangeRates();
   }
 }
+
