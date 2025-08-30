@@ -1,3 +1,7 @@
+// path: server/src/master-data/master-data.controller.ts
+// version: 2.1 (Enhanced Error Messages)
+// last-modified: 30 สิงหาคม 2568 10:35
+
 import { 
   Controller, 
   Get, 
@@ -76,7 +80,7 @@ export class MasterDataController {
     }
   }
 
-  // --- Master Data for Search ---
+  // --- Basic Master Data ---
   @Get('customers')
   getAllCustomers() {
     return this.masterDataService.findAllCustomers();
@@ -100,9 +104,9 @@ export class MasterDataController {
 
   @Post('customer-groups')
   @HttpCode(HttpStatus.CREATED)
-  async addCustomerGroup(@Body() groupDto: CreateCustomerGroupDto) {
+  addCustomerGroup(@Body() groupDto: CreateCustomerGroupDto) {
     try {
-      // Check for duplicate names
+      // Check for duplicate group name
       const existingGroups = this.masterDataService.findAllCustomerGroups();
       const duplicate = existingGroups.find(group => 
         group.name.toLowerCase() === groupDto.name.toLowerCase()
@@ -124,9 +128,20 @@ export class MasterDataController {
   @Put('customer-groups/:id')
   updateCustomerGroup(@Param('id') id: string, @Body() groupDto: UpdateCustomerGroupDto) {
     try {
+      // Check for duplicate name (excluding current group)
+      const existingGroups = this.masterDataService.findAllCustomerGroups();
+      const duplicate = existingGroups.find(group => 
+        group.name.toLowerCase() === groupDto.name.toLowerCase() && 
+        group.id !== id
+      );
+      
+      if (duplicate) {
+        throw new ConflictException(`Customer group with name "${groupDto.name}" already exists`);
+      }
+
       return this.masterDataService.updateCustomerGroup(id, groupDto);
     } catch (error) {
-      if (error instanceof NotFoundException) {
+      if (error instanceof NotFoundException || error instanceof ConflictException) {
         throw error;
       }
       throw new BadRequestException('Failed to update customer group');
@@ -142,7 +157,7 @@ export class MasterDataController {
       const usedInMapping = mappings.find(mapping => mapping.customerGroupId === id);
       
       if (usedInMapping) {
-        throw new ConflictException('Cannot delete customer group that is being used in customer mappings');
+        throw new ConflictException('Cannot delete customer group that is being used in customer mappings. Please remove the mappings first.');
       }
 
       return this.masterDataService.deleteCustomerGroup(id);
@@ -171,7 +186,12 @@ export class MasterDataController {
       );
       
       if (duplicate) {
-        throw new ConflictException(`Customer "${mappingDto.customerId}" is already mapped to group "${duplicate.customerGroupId}". Please remove the existing mapping first or update it instead.`);
+        // Get customer name for better error message
+        const customers = this.masterDataService.findAllCustomers();
+        const customer = customers.find(c => c.id === mappingDto.customerId);
+        const customerName = customer?.name || mappingDto.customerId;
+        
+        throw new ConflictException(`Customer "${customerName}" is already mapped to a group. Each customer can only be mapped to one group. Please remove the existing mapping first or update it instead.`);
       }
 
       // Validate customer exists
@@ -208,7 +228,12 @@ export class MasterDataController {
       );
       
       if (duplicate) {
-        throw new ConflictException(`Customer "${mappingDto.customerId}" is already mapped to group "${duplicate.customerGroupId}". Each customer can only be mapped to one group.`);
+        // Get customer name for better error message
+        const customers = this.masterDataService.findAllCustomers();
+        const customer = customers.find(c => c.id === mappingDto.customerId);
+        const customerName = customer?.name || mappingDto.customerId;
+        
+        throw new ConflictException(`Customer "${customerName}" is already mapped to another group. Each customer can only be mapped to one group.`);
       }
 
       // Validate customer exists
@@ -272,7 +297,7 @@ export class MasterDataController {
       );
       
       if (duplicate) {
-        throw new ConflictException(`Fab cost already exists for group "${costDto.customerGroupId}" in currency "${costDto.currency}"`);
+        throw new ConflictException(`Fab cost already exists for this customer group in ${costDto.currency} currency. Please update the existing record instead.`);
       }
 
       return this.masterDataService.addFabCost(costDto);
@@ -308,18 +333,20 @@ export class MasterDataController {
       throw new BadRequestException('Failed to delete fab cost');
     }
   }
-  
-  // --- Other Masters (GET only for now as per UI) ---
+
+  // --- Standard Prices ---
   @Get('standard-prices')
   getAllStandardPrices() {
     return this.masterDataService.findAllStandardPrices();
   }
 
+  // --- Selling Factors ---
   @Get('selling-factors')
   getAllSellingFactors() {
     return this.masterDataService.findAllSellingFactors();
   }
 
+  // --- LME Prices ---
   @Get('lme-prices')
   getAllLmePrices() {
     return this.masterDataService.findAllLmePrices();
@@ -342,21 +369,16 @@ export class MasterDataController {
         throw new BadRequestException(`Customer group with ID "${rateDto.customerGroupId}" does not exist`);
       }
 
-      // Validate different currencies
-      if (rateDto.sourceCurrency === rateDto.destinationCurrency) {
-        throw new BadRequestException('Source and destination currencies must be different');
-      }
-
       // Check for duplicate exchange rates
       const existingRates = this.masterDataService.findAllExchangeRates();
       const duplicate = existingRates.find(rate => 
-        rate.customerGroupId === rateDto.customerGroupId &&
+        rate.customerGroupId === rateDto.customerGroupId && 
         rate.sourceCurrency === rateDto.sourceCurrency &&
         rate.destinationCurrency === rateDto.destinationCurrency
       );
       
       if (duplicate) {
-        throw new ConflictException(`Exchange rate already exists for ${rateDto.sourceCurrency} to ${rateDto.destinationCurrency} in group "${rateDto.customerGroupId}"`);
+        throw new ConflictException(`Exchange rate from ${rateDto.sourceCurrency} to ${rateDto.destinationCurrency} already exists for this customer group. Please update the existing record instead.`);
       }
 
       return this.masterDataService.addExchangeRate(rateDto);

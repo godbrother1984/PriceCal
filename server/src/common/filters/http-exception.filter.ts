@@ -1,38 +1,60 @@
-import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
+// path: server/src/common/filters/http-exception.filter.ts
+// version: 2.0 (Enhanced Error Response Format)
+// last-modified: 30 สิงหาคม 2568 10:40
+
+import {
+  ExceptionFilter,
+  Catch,
+  ArgumentsHost,
+  HttpException,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
 import { Request, Response } from 'express';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
-  catch(exception: unknown, host: ArgumentsHost) {
+  private readonly logger = new Logger(GlobalExceptionFilter.name);
+
+  catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
-    let status: number;
-    let message: string | object;
+    let status = HttpStatus.INTERNAL_SERVER_ERROR;
+    let message = 'Internal server error occurred';
+    let error = 'Internal Server Error';
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const exceptionResponse = exception.getResponse();
-      message = typeof exceptionResponse === 'string' 
-        ? exceptionResponse 
-        : exceptionResponse;
-    } else {
-      status = HttpStatus.INTERNAL_SERVER_ERROR;
-      message = 'Internal server error';
-      console.error('Unexpected error:', exception);
+      
+      if (typeof exceptionResponse === 'string') {
+        message = exceptionResponse;
+      } else if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
+        const responseObj = exceptionResponse as any;
+        message = responseObj.message || responseObj.error || exception.message;
+        error = responseObj.error || exception.name;
+      }
+    } else if (exception instanceof Error) {
+      message = exception.message;
+      error = exception.name;
     }
 
-    const errorResponse = {
+    // Log the error for debugging
+    this.logger.error(
+      `HTTP Status: ${status} Error Message: ${message}`,
+      exception instanceof Error ? exception.stack : 'Unknown error',
+    );
+
+    // Send consistent error response
+    response.status(status).json({
+      success: false,
       statusCode: status,
+      error,
+      message,
       timestamp: new Date().toISOString(),
       path: request.url,
-      method: request.method,
-      message: message,
-    };
-
-    console.log(`${request.method} ${request.url} - ${status} - ${JSON.stringify(message)}`);
-
-    response.status(status).json(errorResponse);
+    });
   }
 }

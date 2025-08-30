@@ -1,4 +1,8 @@
-import { IsString, IsNotEmpty, IsNumber, IsPositive, IsIn } from 'class-validator';
+// path: server/src/master-data/dto/fab-cost.dto.ts
+// version: 1.1 (Fixed Import)
+// last-modified: 30 สิงหาคม 2568 11:05
+
+import { IsString, IsNotEmpty, IsNumber, IsPositive, IsIn, IsOptional } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateFabCostDto {
