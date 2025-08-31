@@ -1,21 +1,42 @@
-import { IsString, IsNotEmpty, IsOptional, IsIn } from 'class-validator';
+// path: server/src/master-data/dto/customer-group.dto.ts
+// version: 1.0 (Initial DTO Creation)
+// last-modified: 31 สิงหาคม 2568
+
+import { IsString, IsNotEmpty, IsOptional, Length } from 'class-validator';
 
 export class CreateCustomerGroupDto {
-  @IsNotEmpty()
   @IsString()
+  @IsNotEmpty()
+  @Length(2, 10)
+  id: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @Length(2, 100)
   name: string;
 
-  @IsOptional()
   @IsString()
-  description?: string;
-
   @IsNotEmpty()
-  @IsIn(['Domestic', 'Export'])
-  type: 'Domestic' | 'Export';
+  type: string;
+
+  @IsString()
+  @IsOptional()
+  @Length(0, 255)
+  description?: string;
 }
 
-export class UpdateCustomerGroupDto extends CreateCustomerGroupDto {
-  @IsOptional()
+export class UpdateCustomerGroupDto {
   @IsString()
-  id?: string;
+  @IsOptional()
+  @Length(2, 100)
+  name?: string;
+
+  @IsString()
+  @IsOptional()
+  type?: string;
+
+  @IsString()
+  @IsOptional()
+  @Length(0, 255)
+  description?: string;
 }

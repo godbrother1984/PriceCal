@@ -1,28 +1,44 @@
-import { IsString, IsNotEmpty, IsNumber, IsPositive, IsIn, IsOptional } from 'class-validator';
-import { Type } from 'class-transformer';
+// path: server/src/master-data/dto/exchange-rate.dto.ts
+// version: 1.0 (Initial DTO Creation)
+// last-modified: 31 สิงหาคม 2568
+
+import { IsString, IsNotEmpty, IsNumber, IsPositive } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class CreateExchangeRateDto {
-  @IsNotEmpty()
   @IsString()
+  @IsNotEmpty()
   customerGroupId: string;
 
+  @IsString()
   @IsNotEmpty()
-  @IsIn(['THB', 'USD', 'EUR'])
-  sourceCurrency: 'THB' | 'USD' | 'EUR';
+  sourceCurrency: string;
 
+  @IsString()
   @IsNotEmpty()
-  @IsIn(['THB', 'USD', 'EUR'])
-  destinationCurrency: 'THB' | 'USD' | 'EUR';
+  destinationCurrency: string;
 
-  @IsNotEmpty()
-  @IsNumber({ maxDecimalPlaces: 6 })
+  @IsNumber()
   @IsPositive()
-  @Type(() => Number)
+  @Transform(({ value }) => parseFloat(value))
   rate: number;
 }
 
-export class UpdateExchangeRateDto extends CreateExchangeRateDto {
-  @IsOptional()
+export class UpdateExchangeRateDto {
   @IsString()
-  id?: string;
+  @IsNotEmpty()
+  customerGroupId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  sourceCurrency: string;
+
+  @IsString()
+  @IsNotEmpty()
+  destinationCurrency: string;
+
+  @IsNumber()
+  @IsPositive()
+  @Transform(({ value }) => parseFloat(value))
+  rate: number;
 }

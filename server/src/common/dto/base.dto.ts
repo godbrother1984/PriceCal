@@ -1,12 +1,12 @@
 // path: server/src/common/dto/base.dto.ts
-// version: 1.0
-// last-modified: 29 สิงหาคม 2568 16:30
+// version: 1.0 (Initial Base DTO)
+// last-modified: 31 สิงหาคม 2568
 
-import { IsString, IsOptional, IsUUID, IsDateString } from 'class-validator';
+import { IsOptional, IsString, IsDateString } from 'class-validator';
 
-export class BaseDto {
+export abstract class BaseDto {
   @IsOptional()
-  @IsUUID()
+  @IsString()
   id?: string;
 
   @IsOptional()

@@ -1,25 +1,25 @@
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+// path: server/src/master-data/dto/customer-mapping.dto.ts
+// version: 1.0 (Initial DTO Creation)
+// last-modified: 31 สิงหาคม 2568
+
+import { IsString, IsNotEmpty } from 'class-validator';
 
 export class CreateCustomerMappingDto {
-  @IsNotEmpty()
   @IsString()
+  @IsNotEmpty()
   customerId: string;
 
+  @IsString()
   @IsNotEmpty()
-  @IsString()
   customerGroupId: string;
-
-  @IsOptional()
-  @IsString()
-  customerName?: string;
-
-  @IsOptional()
-  @IsString()
-  customerGroupName?: string;
 }
 
-export class UpdateCustomerMappingDto extends CreateCustomerMappingDto {
-  @IsOptional()
+export class UpdateCustomerMappingDto {
   @IsString()
-  id?: string;
+  @IsNotEmpty()
+  customerId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  customerGroupId: string;
 }

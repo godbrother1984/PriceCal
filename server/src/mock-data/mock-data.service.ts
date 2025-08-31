@@ -1,6 +1,6 @@
 // path: server/src/mock-data/mock-data.service.ts
-// version: 2.3 (Data Consistency Fix)
-// last-modified: 29 สิงหาคม 2568 14:40
+// version: 2.4 (Audit Trail Enhancement)
+// last-modified: 31 สิงหาคม 2568
 
 import { Injectable, NotFoundException } from '@nestjs/common';
 
@@ -58,37 +58,136 @@ export class MockDataService {
   ];
 
   private customerGroups = [
-      { id: 'CG-DOM', name: 'Domestic', type: 'Domestic', description: 'ลูกค้าในประเทศ' },
-      { id: 'CG-EXP', name: 'Export', type: 'Export', description: 'ลูกค้าต่างประเทศ' },
+    { 
+      id: 'CG-DOM', 
+      name: 'Domestic', 
+      type: 'Domestic', 
+      description: 'ลูกค้าในประเทศ',
+      ...this.addAuditFields({})
+    },
+    { 
+      id: 'CG-EXP', 
+      name: 'Export', 
+      type: 'Export', 
+      description: 'ลูกค้าต่างประเทศ',
+      ...this.addAuditFields({})
+    },
   ];
   
   private customerMappings = [
-      { id: 'CM-001', customerId: 'CUST-001', customerName: 'Thai Summit Group', customerGroupId: 'CG-DOM' },
-      { id: 'CM-002', customerId: 'CUST-002', customerName: 'Honda Automobile', customerGroupId: 'CG-DOM' },
-      { id: 'CM-003', customerId: 'CUST-003', customerName: 'Toyota Motor', customerGroupId: 'CG-DOM' },
+    { 
+      id: 'CM-001', 
+      customerId: 'CUST-001', 
+      customerName: 'Thai Summit Group', 
+      customerGroupId: 'CG-DOM',
+      ...this.addAuditFields({})
+    },
+    { 
+      id: 'CM-002', 
+      customerId: 'CUST-002', 
+      customerName: 'Honda Automobile', 
+      customerGroupId: 'CG-DOM',
+      ...this.addAuditFields({})
+    },
+    { 
+      id: 'CM-003', 
+      customerId: 'CUST-003', 
+      customerName: 'Toyota Motor', 
+      customerGroupId: 'CG-DOM',
+      ...this.addAuditFields({})
+    },
   ];
   
   private fabCosts = [
-      { id: 'FC-001', customerGroupId: 'CG-DOM', costValue: 150, currency: 'THB' },
-      { id: 'FC-002', customerGroupId: 'CG-EXP', costValue: 5, currency: 'USD' },
+    { 
+      id: 'FC-001', 
+      customerGroupId: 'CG-DOM', 
+      costValue: 150, 
+      currency: 'THB',
+      ...this.addAuditFields({})
+    },
+    { 
+      id: 'FC-002', 
+      customerGroupId: 'CG-EXP', 
+      costValue: 5, 
+      currency: 'USD',
+      ...this.addAuditFields({})
+    },
   ];
   
   private standardPrices = [
-      { id: 'SP-001', rmId: 'RM-AL-01', price: 85, currency: 'THB' },
-      { id: 'SP-002', rmId: 'RM-CU-02', price: 300, currency: 'THB' },
+    { 
+      id: 'SP-001', 
+      rmId: 'RM-AL-01', 
+      price: 85, 
+      currency: 'THB',
+      ...this.addAuditFields({})
+    },
+    { 
+      id: 'SP-002', 
+      rmId: 'RM-CU-02', 
+      price: 300, 
+      currency: 'THB',
+      ...this.addAuditFields({})
+    },
   ];
   
   private sellingFactors = [
-      { id: 'SF-001', pattern: 'Default', factor: 1.25 },
+    { 
+      id: 'SF-001', 
+      pattern: 'Default', 
+      factor: 1.25,
+      ...this.addAuditFields({})
+    },
   ];
   
   private lmePrices = [
-      { id: 'LME-001', customerGroupId: 'CG-EXP', itemGroupCode: 'AL', price: 2200, currency: 'USD' },
+    { 
+      id: 'LME-001', 
+      customerGroupId: 'CG-EXP', 
+      itemGroupCode: 'AL', 
+      price: 2200, 
+      currency: 'USD',
+      ...this.addAuditFields({})
+    },
   ];
   
   private exchangeRates = [
-      { id: 'ER-001', customerGroupId: 'CG-EXP', sourceCurrency: 'USD', destinationCurrency: 'THB', rate: 36.5 },
+    { 
+      id: 'ER-001', 
+      customerGroupId: 'CG-EXP', 
+      sourceCurrency: 'USD', 
+      destinationCurrency: 'THB', 
+      rate: 36.5,
+      ...this.addAuditFields({})
+    },
   ];
+
+  // --- Audit Trail Helper Methods ---
+  private addAuditFields(data: any, isUpdate = false): any {
+    const currentDate = new Date().toISOString();
+    const currentUser = 'system'; // In real app, get from JWT token
+    
+    if (isUpdate) {
+      return {
+        ...data,
+        modifyDate: currentDate,
+        modifyUser: currentUser,
+      };
+    } else {
+      return {
+        ...data,
+        createDate: currentDate,
+        createUser: currentUser,
+        modifyDate: currentDate,
+        modifyUser: currentUser,
+      };
+    }
+  }
+
+  private generateId(prefix: string): string {
+    return `${prefix}-${Date.now().toString().slice(-6)}`;
+  }
 
   // --- Helper Methods ---
   private updateItem(collection: any[], id: string, dto: any) {
@@ -96,10 +195,17 @@ export class MockDataService {
     if (itemIndex === -1) {
       throw new NotFoundException(`Item with ID ${id} not found`);
     }
-    const updatedItem = { ...collection[itemIndex], ...dto };
+    
+    const updatedItem = {
+      ...collection[itemIndex],
+      ...dto,
+      ...this.addAuditFields(dto, true) // Add update audit fields
+    };
+    
     collection[itemIndex] = updatedItem;
     return updatedItem;
   }
+
   private deleteItem(collection: any[], id: string) {
     const initialLength = collection.length;
     const newCollection = collection.filter(item => item.id !== id);
@@ -112,9 +218,10 @@ export class MockDataService {
   // --- Price Requests ---
   findAllRequests() { 
     return this.priceRequests.map(({ id, customerName, productName, status, createdBy, createdAt, costingBy }) => ({
-      id, customerName, productName, status, createdBy, createdAt, costingBy
+     id, customerName, productName, status, createdBy, createdAt, costingBy
     }));
   }
+
   findOneRequest(id: string) {
     const request = this.priceRequests.find(r => r.id === id);
     if (!request) {
@@ -122,8 +229,9 @@ export class MockDataService {
     }
     return request;
   }
+
   addPriceRequest(requestDto: any) {
-    const newId = `REQ-${String(Date.now()).slice(-5)}`;
+    const newId = this.generateId('REQ');
     const newRequest = {
       id: newId,
       customerName: requestDto.formData.customerName || requestDto.formData.newCustomerName,
@@ -132,10 +240,12 @@ export class MockDataService {
       createdBy: 'Current User', // Placeholder
       createdAt: new Date().toISOString().split('T')[0],
       ...requestDto,
+      ...this.addAuditFields({})
     };
     this.priceRequests.unshift(newRequest);
     return newRequest;
   }
+
   updatePriceRequest(id: string, requestDto: any) {
     const requestIndex = this.priceRequests.findIndex(r => r.id === id);
     if (requestIndex === -1) {
@@ -150,10 +260,11 @@ export class MockDataService {
       customerName: requestDto.formData.customerName || requestDto.formData.newCustomerName || existingRequest.customerName,
       productName: requestDto.formData.productName || requestDto.formData.newProductName || existingRequest.productName,
       id: id,
+      ...this.addAuditFields(requestDto, true)
     };
     
     this.priceRequests[requestIndex] = updatedRequest;
-    console.log('Updated Request:', updatedRequest);
+    console.log('[MockDataService] Updated Request:', updatedRequest.id);
     return updatedRequest;
   }
 
@@ -164,71 +275,110 @@ export class MockDataService {
 
   // --- Customer Groups ---
   findAllCustomerGroups() { return this.customerGroups; }
+  
   addCustomerGroup(groupDto: any) {
-    const newGroup = { id: `CG-${Date.now()}`, ...groupDto };
+    const newGroup = {
+      id: this.generateId('CG'),
+      ...groupDto,
+      ...this.addAuditFields({})
+    };
     this.customerGroups.push(newGroup);
+    console.log('[MockDataService] Created Customer Group:', newGroup.id);
     return newGroup;
   }
+
   updateCustomerGroup(id: string, groupDto: any) {
-    return this.updateItem(this.customerGroups, id, groupDto);
+    const result = this.updateItem(this.customerGroups, id, groupDto);
+    console.log('[MockDataService] Updated Customer Group:', id);
+    return result;
   }
+
   deleteCustomerGroup(id: string) {
     this.customerGroups = this.deleteItem(this.customerGroups, id);
+    console.log('[MockDataService] Deleted Customer Group:', id);
     return { message: `Deleted group with ID ${id}` };
   }
 
   // --- Customer Mappings ---
   findAllCustomerMappings() { return this.customerMappings; }
+  
   addCustomerMapping(mapping: any) {
-    const newMapping = { id: `CM-${Date.now()}`, ...mapping };
+    const newMapping = {
+      id: this.generateId('CM'),
+      ...mapping,
+      ...this.addAuditFields({})
+    };
     this.customerMappings.push(newMapping);
+    console.log('[MockDataService] Created Customer Mapping:', newMapping.id);
     return newMapping;
   }
+  
   updateCustomerMapping(id: string, mappingDto: any) {
-    return this.updateItem(this.customerMappings, id, mappingDto);
+    const result = this.updateItem(this.customerMappings, id, mappingDto);
+    console.log('[MockDataService] Updated Customer Mapping:', id);
+    return result;
   }
+  
   deleteCustomerMapping(id: string) {
     this.customerMappings = this.deleteItem(this.customerMappings, id);
+    console.log('[MockDataService] Deleted Customer Mapping:', id);
     return { message: `Deleted mapping with ID ${id}` };
   }
 
   // --- Fab Costs ---
   findAllFabCosts() { return this.fabCosts; }
+  
   addFabCost(cost: any) {
-    const newCost = { id: `FC-${Date.now()}`, ...cost };
+    const newCost = {
+      id: this.generateId('FC'),
+      ...cost,
+      ...this.addAuditFields({})
+    };
     this.fabCosts.push(newCost);
+    console.log('[MockDataService] Created Fab Cost:', newCost.id);
     return newCost;
   }
+  
   updateFabCost(id: string, costDto: any) {
-    return this.updateItem(this.fabCosts, id, costDto);
+    const result = this.updateItem(this.fabCosts, id, costDto);
+    console.log('[MockDataService] Updated Fab Cost:', id);
+    return result;
   }
+  
   deleteFabCost(id: string) {
     this.fabCosts = this.deleteItem(this.fabCosts, id);
+    console.log('[MockDataService] Deleted Fab Cost:', id);
     return { message: `Deleted fab cost with ID ${id}` };
   }
   
-  // --- Standard Prices ---
+  // --- Other Masters ---
   findAllStandardPrices() { return this.standardPrices; }
-  
-  // --- Selling Factors ---
   findAllSellingFactors() { return this.sellingFactors; }
-
-  // --- LME Prices ---
   findAllLmePrices() { return this.lmePrices; }
 
   // --- Exchange Rates ---
   findAllExchangeRates() { return this.exchangeRates; }
+  
   addExchangeRate(rate: any) {
-    const newRate = { id: `ER-${Date.now()}`, ...rate };
+    const newRate = {
+      id: this.generateId('ER'),
+      ...rate,
+      ...this.addAuditFields({})
+    };
     this.exchangeRates.push(newRate);
+    console.log('[MockDataService] Created Exchange Rate:', newRate.id);
     return newRate;
   }
+  
   updateExchangeRate(id: string, rateDto: any) {
-    return this.updateItem(this.exchangeRates, id, rateDto);
+    const result = this.updateItem(this.exchangeRates, id, rateDto);
+    console.log('[MockDataService] Updated Exchange Rate:', id);
+    return result;
   }
+  
   deleteExchangeRate(id: string) {
     this.exchangeRates = this.deleteItem(this.exchangeRates, id);
+    console.log('[MockDataService] Deleted Exchange Rate:', id);
     return { message: `Deleted exchange rate with ID ${id}` };
   }
 }
-

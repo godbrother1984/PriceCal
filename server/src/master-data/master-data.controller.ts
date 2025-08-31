@@ -1,6 +1,6 @@
 // path: server/src/master-data/master-data.controller.ts
-// version: 2.1 (Enhanced Error Messages)
-// last-modified: 30 สิงหาคม 2568 10:35
+// version: 2.0 (MockDataService Integration)
+// last-modified: 31 สิงหาคม 2568
 
 import { 
   Controller, 
@@ -14,36 +14,19 @@ import {
   HttpStatus,
   BadRequestException,
   NotFoundException,
-  ConflictException,
-  UsePipes,
-  ValidationPipe
+  ConflictException
 } from '@nestjs/common';
-import { MasterDataService } from './master-data.service';
-import { 
-  CreateCustomerGroupDto, 
-  UpdateCustomerGroupDto,
-  CreateCustomerMappingDto,
-  UpdateCustomerMappingDto,
-  CreateFabCostDto,
-  UpdateFabCostDto,
-  CreateExchangeRateDto,
-  UpdateExchangeRateDto
-} from './dto';
+import { MockDataService } from '../mock-data/mock-data.service';
 
 @Controller('mock-data')
-@UsePipes(new ValidationPipe({ 
-  transform: true,
-  whitelist: true,
-  forbidNonWhitelisted: true 
-}))
 export class MasterDataController {
-  constructor(private readonly masterDataService: MasterDataService) {}
+  constructor(private readonly mockDataService: MockDataService) {}
 
   // --- Price Requests ---
   @Get('requests')
   getAllRequests() {
     try {
-      return this.masterDataService.findAllRequests();
+      return this.mockDataService.findAllRequests();
     } catch (error) {
       throw new BadRequestException('Failed to fetch requests');
     }
@@ -51,18 +34,21 @@ export class MasterDataController {
 
   @Get('requests/:id')
   findOneRequest(@Param('id') id: string) {
-    const request = this.masterDataService.findOneRequest(id);
-    if (!request) {
-      throw new NotFoundException(`Request with ID ${id} not found`);
+    try {
+      return this.mockDataService.findOneRequest(id);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to fetch request');
     }
-    return request;
   }
 
   @Post('requests')
   @HttpCode(HttpStatus.CREATED)
   addRequest(@Body() requestDto: any) {
     try {
-      return this.masterDataService.addPriceRequest(requestDto);
+      return this.mockDataService.addPriceRequest(requestDto);
     } catch (error) {
       throw new BadRequestException('Failed to create request');
     }
@@ -71,7 +57,7 @@ export class MasterDataController {
   @Put('requests/:id')
   updateRequest(@Param('id') id: string, @Body() requestDto: any) {
     try {
-      return this.masterDataService.updatePriceRequest(id, requestDto);
+      return this.mockDataService.updatePriceRequest(id, requestDto);
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
@@ -80,34 +66,34 @@ export class MasterDataController {
     }
   }
 
-  // --- Basic Master Data ---
+  // --- Master Data for Search ---
   @Get('customers')
   getAllCustomers() {
-    return this.masterDataService.findAllCustomers();
+    return this.mockDataService.findAllCustomers();
   }
 
   @Get('products')
   getAllProducts() {
-    return this.masterDataService.findAllProducts();
+    return this.mockDataService.findAllProducts();
   }
 
   @Get('raw-materials')
   getAllRawMaterials() {
-    return this.masterDataService.findAllRawMaterials();
+    return this.mockDataService.findAllRawMaterials();
   }
 
   // --- Customer Groups ---
   @Get('customer-groups')
   getAllCustomerGroups() {
-    return this.masterDataService.findAllCustomerGroups();
+    return this.mockDataService.findAllCustomerGroups();
   }
 
   @Post('customer-groups')
   @HttpCode(HttpStatus.CREATED)
-  addCustomerGroup(@Body() groupDto: CreateCustomerGroupDto) {
+  addCustomerGroup(@Body() groupDto: any) {
     try {
-      // Check for duplicate group name
-      const existingGroups = this.masterDataService.findAllCustomerGroups();
+      // Check for duplicate names
+      const existingGroups = this.mockDataService.findAllCustomerGroups();
       const duplicate = existingGroups.find(group => 
         group.name.toLowerCase() === groupDto.name.toLowerCase()
       );
@@ -116,7 +102,7 @@ export class MasterDataController {
         throw new ConflictException(`Customer group with name "${groupDto.name}" already exists`);
       }
 
-      return this.masterDataService.addCustomerGroup(groupDto);
+      return this.mockDataService.addCustomerGroup(groupDto);
     } catch (error) {
       if (error instanceof ConflictException) {
         throw error;
@@ -126,22 +112,11 @@ export class MasterDataController {
   }
 
   @Put('customer-groups/:id')
-  updateCustomerGroup(@Param('id') id: string, @Body() groupDto: UpdateCustomerGroupDto) {
+  updateCustomerGroup(@Param('id') id: string, @Body() groupDto: any) {
     try {
-      // Check for duplicate name (excluding current group)
-      const existingGroups = this.masterDataService.findAllCustomerGroups();
-      const duplicate = existingGroups.find(group => 
-        group.name.toLowerCase() === groupDto.name.toLowerCase() && 
-        group.id !== id
-      );
-      
-      if (duplicate) {
-        throw new ConflictException(`Customer group with name "${groupDto.name}" already exists`);
-      }
-
-      return this.masterDataService.updateCustomerGroup(id, groupDto);
+      return this.mockDataService.updateCustomerGroup(id, groupDto);
     } catch (error) {
-      if (error instanceof NotFoundException || error instanceof ConflictException) {
+      if (error instanceof NotFoundException) {
         throw error;
       }
       throw new BadRequestException('Failed to update customer group');
@@ -149,66 +124,52 @@ export class MasterDataController {
   }
 
   @Delete('customer-groups/:id')
-  @HttpCode(HttpStatus.OK)
   deleteCustomerGroup(@Param('id') id: string) {
     try {
-      // Check if group is being used in mappings
-      const mappings = this.masterDataService.findAllCustomerMappings();
-      const usedInMapping = mappings.find(mapping => mapping.customerGroupId === id);
-      
-      if (usedInMapping) {
-        throw new ConflictException('Cannot delete customer group that is being used in customer mappings. Please remove the mappings first.');
-      }
-
-      return this.masterDataService.deleteCustomerGroup(id);
+      return this.mockDataService.deleteCustomerGroup(id);
     } catch (error) {
-      if (error instanceof NotFoundException || error instanceof ConflictException) {
+      if (error instanceof NotFoundException) {
         throw error;
       }
       throw new BadRequestException('Failed to delete customer group');
     }
   }
-  
+
   // --- Customer Mappings ---
   @Get('customer-mappings')
   getAllCustomerMappings() {
-    return this.masterDataService.findAllCustomerMappings();
+    return this.mockDataService.findAllCustomerMappings();
   }
 
   @Post('customer-mappings')
   @HttpCode(HttpStatus.CREATED)
-  addCustomerMapping(@Body() mappingDto: CreateCustomerMappingDto) {
+  addCustomerMapping(@Body() mappingDto: any) {
     try {
-      // Check for duplicate customer - each customer can only be mapped to ONE group
-      const existingMappings = this.masterDataService.findAllCustomerMappings();
-      const duplicate = existingMappings.find(mapping => 
-        mapping.customerId === mappingDto.customerId
-      );
-      
-      if (duplicate) {
-        // Get customer name for better error message
-        const customers = this.masterDataService.findAllCustomers();
-        const customer = customers.find(c => c.id === mappingDto.customerId);
-        const customerName = customer?.name || mappingDto.customerId;
-        
-        throw new ConflictException(`Customer "${customerName}" is already mapped to a group. Each customer can only be mapped to one group. Please remove the existing mapping first or update it instead.`);
-      }
-
       // Validate customer exists
-      const customers = this.masterDataService.findAllCustomers();
+      const customers = this.mockDataService.findAllCustomers();
       const customerExists = customers.find(c => c.id === mappingDto.customerId);
       if (!customerExists) {
         throw new BadRequestException(`Customer with ID "${mappingDto.customerId}" does not exist`);
       }
 
       // Validate customer group exists
-      const groups = this.masterDataService.findAllCustomerGroups();
+      const groups = this.mockDataService.findAllCustomerGroups();
       const groupExists = groups.find(g => g.id === mappingDto.customerGroupId);
       if (!groupExists) {
         throw new BadRequestException(`Customer group with ID "${mappingDto.customerGroupId}" does not exist`);
       }
 
-      return this.masterDataService.addCustomerMapping(mappingDto);
+      // Check for duplicate mappings
+      const existingMappings = this.mockDataService.findAllCustomerMappings();
+      const duplicate = existingMappings.find(mapping => 
+        mapping.customerId === mappingDto.customerId
+      );
+      
+      if (duplicate) {
+        throw new ConflictException(`Customer "${mappingDto.customerId}" is already mapped to a group`);
+      }
+
+      return this.mockDataService.addCustomerMapping(mappingDto);
     } catch (error) {
       if (error instanceof ConflictException || error instanceof BadRequestException) {
         throw error;
@@ -218,41 +179,11 @@ export class MasterDataController {
   }
 
   @Put('customer-mappings/:id')
-  updateCustomerMapping(@Param('id') id: string, @Body() mappingDto: UpdateCustomerMappingDto) {
+  updateCustomerMapping(@Param('id') id: string, @Body() mappingDto: any) {
     try {
-      // Check for duplicate customer (excluding the current mapping being updated)
-      const existingMappings = this.masterDataService.findAllCustomerMappings();
-      const duplicate = existingMappings.find(mapping => 
-        mapping.customerId === mappingDto.customerId && 
-        mapping.id !== id // Exclude current mapping
-      );
-      
-      if (duplicate) {
-        // Get customer name for better error message
-        const customers = this.masterDataService.findAllCustomers();
-        const customer = customers.find(c => c.id === mappingDto.customerId);
-        const customerName = customer?.name || mappingDto.customerId;
-        
-        throw new ConflictException(`Customer "${customerName}" is already mapped to another group. Each customer can only be mapped to one group.`);
-      }
-
-      // Validate customer exists
-      const customers = this.masterDataService.findAllCustomers();
-      const customerExists = customers.find(c => c.id === mappingDto.customerId);
-      if (!customerExists) {
-        throw new BadRequestException(`Customer with ID "${mappingDto.customerId}" does not exist`);
-      }
-
-      // Validate customer group exists
-      const groups = this.masterDataService.findAllCustomerGroups();
-      const groupExists = groups.find(g => g.id === mappingDto.customerGroupId);
-      if (!groupExists) {
-        throw new BadRequestException(`Customer group with ID "${mappingDto.customerGroupId}" does not exist`);
-      }
-
-      return this.masterDataService.updateCustomerMapping(id, mappingDto);
+      return this.mockDataService.updateCustomerMapping(id, mappingDto);
     } catch (error) {
-      if (error instanceof NotFoundException || error instanceof ConflictException || error instanceof BadRequestException) {
+      if (error instanceof NotFoundException) {
         throw error;
       }
       throw new BadRequestException('Failed to update customer mapping');
@@ -260,10 +191,9 @@ export class MasterDataController {
   }
 
   @Delete('customer-mappings/:id')
-  @HttpCode(HttpStatus.OK)
   deleteCustomerMapping(@Param('id') id: string) {
     try {
-      return this.masterDataService.deleteCustomerMapping(id);
+      return this.mockDataService.deleteCustomerMapping(id);
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
@@ -275,32 +205,32 @@ export class MasterDataController {
   // --- Fab Costs ---
   @Get('fab-costs')
   getAllFabCosts() {
-    return this.masterDataService.findAllFabCosts();
+    return this.mockDataService.findAllFabCosts();
   }
 
   @Post('fab-costs')
   @HttpCode(HttpStatus.CREATED)
-  addFabCost(@Body() costDto: CreateFabCostDto) {
+  addFabCost(@Body() costDto: any) {
     try {
       // Validate customer group exists
-      const groups = this.masterDataService.findAllCustomerGroups();
+      const groups = this.mockDataService.findAllCustomerGroups();
       const groupExists = groups.find(g => g.id === costDto.customerGroupId);
       if (!groupExists) {
         throw new BadRequestException(`Customer group with ID "${costDto.customerGroupId}" does not exist`);
       }
 
       // Check for duplicate fab costs for same group
-      const existingCosts = this.masterDataService.findAllFabCosts();
+      const existingCosts = this.mockDataService.findAllFabCosts();
       const duplicate = existingCosts.find(cost => 
         cost.customerGroupId === costDto.customerGroupId && 
         cost.currency === costDto.currency
       );
       
       if (duplicate) {
-        throw new ConflictException(`Fab cost already exists for this customer group in ${costDto.currency} currency. Please update the existing record instead.`);
+        throw new ConflictException(`Fab cost already exists for group "${costDto.customerGroupId}" in currency "${costDto.currency}"`);
       }
 
-      return this.masterDataService.addFabCost(costDto);
+      return this.mockDataService.addFabCost(costDto);
     } catch (error) {
       if (error instanceof ConflictException || error instanceof BadRequestException) {
         throw error;
@@ -310,9 +240,9 @@ export class MasterDataController {
   }
 
   @Put('fab-costs/:id')
-  updateFabCost(@Param('id') id: string, @Body() costDto: UpdateFabCostDto) {
+  updateFabCost(@Param('id') id: string, @Body() costDto: any) {
     try {
-      return this.masterDataService.updateFabCost(id, costDto);
+      return this.mockDataService.updateFabCost(id, costDto);
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
@@ -322,10 +252,9 @@ export class MasterDataController {
   }
 
   @Delete('fab-costs/:id')
-  @HttpCode(HttpStatus.OK)
   deleteFabCost(@Param('id') id: string) {
     try {
-      return this.masterDataService.deleteFabCost(id);
+      return this.mockDataService.deleteFabCost(id);
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
@@ -334,56 +263,41 @@ export class MasterDataController {
     }
   }
 
-  // --- Standard Prices ---
+  // --- Other Masters (GET only for now) ---
   @Get('standard-prices')
   getAllStandardPrices() {
-    return this.masterDataService.findAllStandardPrices();
+    return this.mockDataService.findAllStandardPrices();
   }
 
-  // --- Selling Factors ---
   @Get('selling-factors')
   getAllSellingFactors() {
-    return this.masterDataService.findAllSellingFactors();
+    return this.mockDataService.findAllSellingFactors();
   }
 
-  // --- LME Prices ---
   @Get('lme-prices')
   getAllLmePrices() {
-    return this.masterDataService.findAllLmePrices();
+    return this.mockDataService.findAllLmePrices();
   }
 
-  // --- Exchange Rates ---
   @Get('exchange-rates')
   getAllExchangeRates() {
-    return this.masterDataService.findAllExchangeRates();
+    return this.mockDataService.findAllExchangeRates();
   }
 
   @Post('exchange-rates')
   @HttpCode(HttpStatus.CREATED)
-  addExchangeRate(@Body() rateDto: CreateExchangeRateDto) {
+  addExchangeRate(@Body() rateDto: any) {
     try {
       // Validate customer group exists
-      const groups = this.masterDataService.findAllCustomerGroups();
+      const groups = this.mockDataService.findAllCustomerGroups();
       const groupExists = groups.find(g => g.id === rateDto.customerGroupId);
       if (!groupExists) {
         throw new BadRequestException(`Customer group with ID "${rateDto.customerGroupId}" does not exist`);
       }
 
-      // Check for duplicate exchange rates
-      const existingRates = this.masterDataService.findAllExchangeRates();
-      const duplicate = existingRates.find(rate => 
-        rate.customerGroupId === rateDto.customerGroupId && 
-        rate.sourceCurrency === rateDto.sourceCurrency &&
-        rate.destinationCurrency === rateDto.destinationCurrency
-      );
-      
-      if (duplicate) {
-        throw new ConflictException(`Exchange rate from ${rateDto.sourceCurrency} to ${rateDto.destinationCurrency} already exists for this customer group. Please update the existing record instead.`);
-      }
-
-      return this.masterDataService.addExchangeRate(rateDto);
+      return this.mockDataService.addExchangeRate(rateDto);
     } catch (error) {
-      if (error instanceof ConflictException || error instanceof BadRequestException) {
+      if (error instanceof BadRequestException) {
         throw error;
       }
       throw new BadRequestException('Failed to create exchange rate');
@@ -391,9 +305,9 @@ export class MasterDataController {
   }
 
   @Put('exchange-rates/:id')
-  updateExchangeRate(@Param('id') id: string, @Body() rateDto: UpdateExchangeRateDto) {
+  updateExchangeRate(@Param('id') id: string, @Body() rateDto: any) {
     try {
-      return this.masterDataService.updateExchangeRate(id, rateDto);
+      return this.mockDataService.updateExchangeRate(id, rateDto);
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
@@ -403,10 +317,9 @@ export class MasterDataController {
   }
 
   @Delete('exchange-rates/:id')
-  @HttpCode(HttpStatus.OK)
   deleteExchangeRate(@Param('id') id: string) {
     try {
-      return this.masterDataService.deleteExchangeRate(id);
+      return this.mockDataService.deleteExchangeRate(id);
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;

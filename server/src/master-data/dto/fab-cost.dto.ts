@@ -1,28 +1,36 @@
 // path: server/src/master-data/dto/fab-cost.dto.ts
-// version: 1.1 (Fixed Import)
-// last-modified: 30 สิงหาคม 2568 11:05
+// version: 1.0 (Initial DTO Creation)
+// last-modified: 31 สิงหาคม 2568
 
-import { IsString, IsNotEmpty, IsNumber, IsPositive, IsIn, IsOptional } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsString, IsNotEmpty, IsNumber, IsPositive } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class CreateFabCostDto {
-  @IsNotEmpty()
   @IsString()
+  @IsNotEmpty()
   customerGroupId: string;
 
-  @IsNotEmpty()
-  @IsNumber({ maxDecimalPlaces: 4 })
+  @IsNumber()
   @IsPositive()
-  @Type(() => Number)
+  @Transform(({ value }) => parseFloat(value))
   costValue: number;
 
+  @IsString()
   @IsNotEmpty()
-  @IsIn(['THB', 'USD', 'EUR'])
-  currency: 'THB' | 'USD' | 'EUR';
+  currency: string;
 }
 
-export class UpdateFabCostDto extends CreateFabCostDto {
-  @IsOptional()
+export class UpdateFabCostDto {
   @IsString()
-  id?: string;
+  @IsNotEmpty()
+  customerGroupId: string;
+
+  @IsNumber()
+  @IsPositive()
+  @Transform(({ value }) => parseFloat(value))
+  costValue: number;
+
+  @IsString()
+  @IsNotEmpty()
+  currency: string;
 }

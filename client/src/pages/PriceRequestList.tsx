@@ -1,6 +1,6 @@
 // path: client/src/pages/PriceRequestList.tsx
-// version: 3.0 (Fixed Backend Response Handling)
-// last-modified: 29 สิงหาคม 2568 17:20
+// version: 2.4 (API Response Structure Fix)
+// last-modified: 31 สิงหาคม 2568
 
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
@@ -26,57 +26,62 @@ api.interceptors.response.use(
   }
 );
 
+// --- Interfaces ---
 interface PriceRequest {
   id: string;
   customerName: string;
   productName: string;
-  status: 'Approved' | 'Pending' | 'Rejected';
+  status: 'Pending' | 'Approved' | 'Rejected';
   createdBy: string;
   createdAt: string;
   costingBy?: string;
 }
 
 interface PriceRequestListProps {
-  onNavigate: (page: 'create-request') => void;
+  onNavigate: (page: string) => void;
   onEdit: (requestId: string) => void;
   version: number;
 }
 
-const ContextMenu = ({ x, y, onEdit, onClose }: { x: number, y: number, onEdit: () => void, onClose: () => void }) => {
+// --- Components ---
+const LoadingSpinner: React.FC = () => (
+  <div className="flex justify-center items-center py-8">
+    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+    <span className="ml-2 text-slate-600">Loading...</span>
+  </div>
+);
+
+const ContextMenu: React.FC<{ 
+  x: number; 
+  y: number; 
+  onEdit: () => void; 
+  onClose: () => void;
+}> = ({ x, y, onEdit, onClose }) => {
   useEffect(() => {
-    const handleClickOutside = () => onClose();
-    document.addEventListener('click', handleClickOutside);
-    return () => {
-      document.removeEventListener('click', handleClickOutside);
-    };
+    const handleClick = () => onClose();
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
   }, [onClose]);
 
   return (
     <div 
-      style={{ top: y, left: x }} 
-      className="absolute z-50 bg-white rounded-md shadow-lg border border-slate-200 w-48 py-1"
+      className="fixed bg-white border border-slate-200 rounded-lg shadow-lg py-2 z-50"
+      style={{ left: x, top: y }}
     >
-      <button onClick={onEdit} className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100">
+      <button 
+        onClick={onEdit}
+        className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+      >
         Edit Request
-      </button>
-      <button className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100">
-        View History
-      </button>
-      <div className="my-1 border-t border-slate-100"></div>
-      <button className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50">
-        Cancel Request
       </button>
     </div>
   );
 };
 
-const LoadingSpinner: React.FC = () => (
-  <div className="flex justify-center items-center py-8">
-    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-  </div>
-);
-
-const ErrorMessage: React.FC<{ message: string; onRetry?: () => void }> = ({ message, onRetry }) => (
+const ErrorMessage: React.FC<{ 
+  message: string; 
+  onRetry?: () => void;
+}> = ({ message, onRetry }) => (
   <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
     <p className="text-red-700 mb-2">{message}</p>
     {onRetry && (
@@ -94,28 +99,40 @@ const PriceRequestList: React.FC<PriceRequestListProps> = ({ onNavigate, onEdit,
   const [filter, setFilter] = useState('All');
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, id: string } | null>(null);
 
+  // Helper function to extract data from API response
+  const extractApiData = (response: any): PriceRequest[] => {
+    // Handle ResponseInterceptor format: { success: true, data: [...], timestamp: "", path: "" }
+    if (response && response.success && Array.isArray(response.data)) {
+      return response.data;
+    }
+    // Handle direct array response
+    if (Array.isArray(response)) {
+      return response;
+    }
+    // Handle nested data structure
+    if (response && Array.isArray(response.data)) {
+      return response.data;
+    }
+    // Default fallback
+    console.warn('Unexpected API response format:', response);
+    return [];
+  };
+
   const fetchRequests = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       const response = await api.get('/mock-data/requests');
       
-      // Enhanced data validation
-      const data = response.data;
-      console.log('API Response:', data); // Debug log
+      console.log('[PriceRequestList] API Response:', response.data); // Debug log
       
-      if (Array.isArray(data)) {
-        setRequests(data);
-      } else if (data && typeof data === 'object' && Array.isArray(data.data)) {
-        // Handle nested data structure
-        setRequests(data.data);
-      } else {
-        console.error('Unexpected response format:', data);
-        setRequests([]);
-        setError('Received unexpected data format from server');
-      }
+      const requestsData = extractApiData(response.data);
+      setRequests(requestsData);
+
+      console.log('[PriceRequestList] Loaded requests:', requestsData.length);
+
     } catch (err: any) {
-      console.error('Fetch error:', err);
+      console.error('[PriceRequestList] Fetch error:', err);
       setError(err.message || 'Could not load price requests. Please check your connection.');
       setRequests([]); // Ensure requests is always an array
     } finally {
