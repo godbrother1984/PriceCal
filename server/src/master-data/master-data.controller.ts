@@ -1,6 +1,6 @@
 // path: server/src/master-data/master-data.controller.ts
-// version: 2.0 (MockDataService Integration)
-// last-modified: 31 สิงหาคม 2568
+// version: 2.1 (Add D365 Mock Endpoints & Full CRUD)
+// last-modified: 1 กันยายน 2568
 
 import { 
   Controller, 
@@ -21,6 +21,75 @@ import { MockDataService } from '../mock-data/mock-data.service';
 @Controller('mock-data')
 export class MasterDataController {
   constructor(private readonly mockDataService: MockDataService) {}
+
+  // --- NEW: D365 Mock Data Endpoints ---
+  @Get('d365-raw-materials')
+  getD365RawMaterials() {
+    return this.mockDataService.findAllD365RawMaterials();
+  }
+
+  @Get('d365-fab-patterns')
+  getD365FabPatterns() {
+    return this.mockDataService.findAllD365FabPatterns();
+  }
+
+  @Get('d365-item-groups')
+  getD365ItemGroups() {
+    return this.mockDataService.findAllD365ItemGroups();
+  }
+
+  // --- Currencies ---
+  @Get('currencies')
+  getAllCurrencies() {
+    return this.mockDataService.findAllCurrencies();
+  }
+
+  @Post('currencies')
+  @HttpCode(HttpStatus.CREATED)
+  addCurrency(@Body() currencyDto: any) {
+    try {
+      // Check for duplicate currency codes
+      const existingCurrencies = this.mockDataService.findAllCurrencies();
+      const duplicate = existingCurrencies.find(currency => 
+        currency.code.toLowerCase() === currencyDto.code.toLowerCase()
+      );
+      
+      if (duplicate) {
+        throw new ConflictException(`Currency with code "${currencyDto.code}" already exists`);
+      }
+
+      return this.mockDataService.addCurrency(currencyDto);
+    } catch (error) {
+      if (error instanceof ConflictException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to create currency');
+    }
+  }
+
+  @Put('currencies/:id')
+  updateCurrency(@Param('id') id: string, @Body() currencyDto: any) {
+    try {
+      return this.mockDataService.updateCurrency(id, currencyDto);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to update currency');
+    }
+  }
+
+  @Delete('currencies/:id')
+  deleteCurrency(@Param('id') id: string) {
+    try {
+      return this.mockDataService.deleteCurrency(id);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to delete currency');
+    }
+  }
 
   // --- Price Requests ---
   @Get('requests')
@@ -159,14 +228,14 @@ export class MasterDataController {
         throw new BadRequestException(`Customer group with ID "${mappingDto.customerGroupId}" does not exist`);
       }
 
-      // Check for duplicate mappings
+      // Check for duplicate mapping
       const existingMappings = this.mockDataService.findAllCustomerMappings();
       const duplicate = existingMappings.find(mapping => 
         mapping.customerId === mappingDto.customerId
       );
       
       if (duplicate) {
-        throw new ConflictException(`Customer "${mappingDto.customerId}" is already mapped to a group`);
+        throw new ConflictException(`Customer mapping for "${mappingDto.customerId}" already exists`);
       }
 
       return this.mockDataService.addCustomerMapping(mappingDto);
@@ -263,22 +332,197 @@ export class MasterDataController {
     }
   }
 
-  // --- Other Masters (GET only for now) ---
+  // --- Standard Prices ---
   @Get('standard-prices')
   getAllStandardPrices() {
     return this.mockDataService.findAllStandardPrices();
   }
 
+  @Post('standard-prices')
+  @HttpCode(HttpStatus.CREATED)
+  addStandardPrice(@Body() priceDto: any) {
+    try {
+      // Validate raw material exists
+      const rawMaterials = this.mockDataService.findAllD365RawMaterials();
+      const rmExists = rawMaterials.find(rm => rm.id === priceDto.rmId);
+      if (!rmExists) {
+        throw new BadRequestException(`Raw material with ID "${priceDto.rmId}" does not exist`);
+      }
+
+      // Check for duplicate standard prices for same RM
+      const existingPrices = this.mockDataService.findAllStandardPrices();
+      const duplicate = existingPrices.find(price => 
+        price.rmId === priceDto.rmId && 
+        price.currency === priceDto.currency
+      );
+      
+      if (duplicate) {
+        throw new ConflictException(`Standard price already exists for raw material "${priceDto.rmId}" in currency "${priceDto.currency}"`);
+      }
+
+      return this.mockDataService.addStandardPrice(priceDto);
+    } catch (error) {
+      if (error instanceof ConflictException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to create standard price');
+    }
+  }
+
+  @Put('standard-prices/:id')
+  updateStandardPrice(@Param('id') id: string, @Body() priceDto: any) {
+    try {
+      return this.mockDataService.updateStandardPrice(id, priceDto);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to update standard price');
+    }
+  }
+
+  @Delete('standard-prices/:id')
+  deleteStandardPrice(@Param('id') id: string) {
+    try {
+      return this.mockDataService.deleteStandardPrice(id);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to delete standard price');
+    }
+  }
+
+  // --- Selling Factors ---
   @Get('selling-factors')
   getAllSellingFactors() {
     return this.mockDataService.findAllSellingFactors();
   }
 
+  @Post('selling-factors')
+  @HttpCode(HttpStatus.CREATED)
+  addSellingFactor(@Body() factorDto: any) {
+    try {
+      // Validate fab pattern exists
+      const fabPatterns = this.mockDataService.findAllD365FabPatterns();
+      const patternExists = fabPatterns.find(fp => fp.id === factorDto.pattern);
+      if (!patternExists) {
+        throw new BadRequestException(`Fab pattern with ID "${factorDto.pattern}" does not exist`);
+      }
+
+      // Check for duplicate selling factors for same pattern
+      const existingFactors = this.mockDataService.findAllSellingFactors();
+      const duplicate = existingFactors.find(factor => 
+        factor.pattern === factorDto.pattern
+      );
+      
+      if (duplicate) {
+        throw new ConflictException(`Selling factor already exists for pattern "${factorDto.pattern}"`);
+      }
+
+      return this.mockDataService.addSellingFactor(factorDto);
+    } catch (error) {
+      if (error instanceof ConflictException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to create selling factor');
+    }
+  }
+
+  @Put('selling-factors/:id')
+  updateSellingFactor(@Param('id') id: string, @Body() factorDto: any) {
+    try {
+      return this.mockDataService.updateSellingFactor(id, factorDto);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to update selling factor');
+    }
+  }
+
+  @Delete('selling-factors/:id')
+  deleteSellingFactor(@Param('id') id: string) {
+    try {
+      return this.mockDataService.deleteSellingFactor(id);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to delete selling factor');
+    }
+  }
+
+  // --- LME Prices ---
   @Get('lme-prices')
   getAllLmePrices() {
     return this.mockDataService.findAllLmePrices();
   }
 
+  @Post('lme-prices')
+  @HttpCode(HttpStatus.CREATED)
+  addLmePrice(@Body() priceDto: any) {
+    try {
+      // Validate customer group exists
+      const groups = this.mockDataService.findAllCustomerGroups();
+      const groupExists = groups.find(g => g.id === priceDto.customerGroupId);
+      if (!groupExists) {
+        throw new BadRequestException(`Customer group with ID "${priceDto.customerGroupId}" does not exist`);
+      }
+
+      // Validate item group exists
+      const itemGroups = this.mockDataService.findAllD365ItemGroups();
+      const itemGroupExists = itemGroups.find(ig => ig.id === priceDto.itemGroupCode);
+      if (!itemGroupExists) {
+        throw new BadRequestException(`Item group with ID "${priceDto.itemGroupCode}" does not exist`);
+      }
+
+      // Check for duplicate LME prices
+      const existingPrices = this.mockDataService.findAllLmePrices();
+      const duplicate = existingPrices.find(price => 
+        price.customerGroupId === priceDto.customerGroupId && 
+        price.itemGroupCode === priceDto.itemGroupCode &&
+        price.currency === priceDto.currency
+      );
+      
+      if (duplicate) {
+        throw new ConflictException(`LME price already exists for this combination`);
+      }
+
+      return this.mockDataService.addLmePrice(priceDto);
+    } catch (error) {
+      if (error instanceof ConflictException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to create LME price');
+    }
+  }
+
+  @Put('lme-prices/:id')
+  updateLmePrice(@Param('id') id: string, @Body() priceDto: any) {
+    try {
+      return this.mockDataService.updateLmePrice(id, priceDto);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to update LME price');
+    }
+  }
+
+  @Delete('lme-prices/:id')
+  deleteLmePrice(@Param('id') id: string) {
+    try {
+      return this.mockDataService.deleteLmePrice(id);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to delete LME price');
+    }
+  }
+
+  // --- Exchange Rates ---
   @Get('exchange-rates')
   getAllExchangeRates() {
     return this.mockDataService.findAllExchangeRates();

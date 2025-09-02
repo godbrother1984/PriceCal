@@ -1,3 +1,43 @@
+/* path: client/src/index.css */
+/* version: 1.1 (Add Custom Scrollbar) */
+/* last-modified: 1 กันยายน 2568 */
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Custom Scrollbar for Dropdown */
+@layer utilities {
+  .scrollbar-dropdown {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 #f1f5f9;
+  }
+  
+  .scrollbar-dropdown::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  .scrollbar-dropdown::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 3px;
+  }
+  
+  .scrollbar-dropdown::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+    transition: background-color 0.2s ease;
+  }
+  
+  .scrollbar-dropdown::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
+  
+  .scrollbar-dropdown::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  
+  /* Hide scrollbar arrows */
+  .scrollbar-dropdown::-webkit-scrollbar-button {
+    display: none;
+  }
+}

@@ -1,6 +1,6 @@
 // path: server/src/mock-data/mock-data.service.ts
-// version: 2.4 (Audit Trail Enhancement)
-// last-modified: 31 สิงหาคม 2568
+// version: 3.0 (Complete with Currencies Support)
+// last-modified: 1 กันยายน 2568
 
 import { Injectable, NotFoundException } from '@nestjs/common';
 
@@ -24,6 +24,76 @@ export class MockDataService {
     { id: 'RM-CU-02', name: 'Copper Wire 0.5mm', unit: 'm' },
     { id: 'RM-ST-03', name: 'Steel Coil 2.0mm', unit: 'kg' },
     { id: 'RM-PC-04', name: 'Polycarbonate Pellet', unit: 'kg' },
+  ];
+
+  // --- D365 Mock Data ---
+  private d365RawMaterials = [
+    { id: 'RM-AL-01', name: 'Aluminum Sheet 1.2mm', description: 'High grade aluminum for automotive parts' },
+    { id: 'RM-CU-02', name: 'Copper Wire 0.5mm', description: 'Pure copper wire for electrical components' },
+    { id: 'RM-ST-03', name: 'Steel Coil 2.0mm', description: 'Cold rolled steel coil for stamping' },
+    { id: 'RM-PC-04', name: 'Polycarbonate Pellet', description: 'Engineering grade plastic pellets' },
+    { id: 'RM-AL-05', name: 'Aluminum Rod 10mm', description: 'Aluminum rod for machining' },
+    { id: 'RM-ST-06', name: 'Stainless Steel 304', description: 'Corrosion resistant steel' },
+  ];
+
+  private d365FabPatterns = [
+    { id: 'FAB-STAMP', name: 'Stamping', description: 'Metal stamping process' },
+    { id: 'FAB-CAST', name: 'Casting', description: 'Metal casting process' },
+    { id: 'FAB-MACH', name: 'Machining', description: 'CNC machining process' },
+    { id: 'FAB-WELD', name: 'Welding', description: 'Metal welding process' },
+    { id: 'FAB-ASSY', name: 'Assembly', description: 'Parts assembly process' },
+  ];
+
+  private d365ItemGroups = [
+    { id: 'IG-ALU', name: 'Aluminum', description: 'Aluminum based materials' },
+    { id: 'IG-STL', name: 'Steel', description: 'Steel based materials' },
+    { id: 'IG-COP', name: 'Copper', description: 'Copper based materials' },
+    { id: 'IG-PLS', name: 'Plastic', description: 'Plastic materials' },
+    { id: 'IG-ELC', name: 'Electronic', description: 'Electronic components' },
+  ];
+
+  // --- Currencies ---
+  private currencies = [
+    {
+      id: 'CUR-001',
+      code: 'THB',
+      name: 'Thai Baht',
+      symbol: '฿',
+      isActive: true,
+      ...this.addAuditFields({})
+    },
+    {
+      id: 'CUR-002',
+      code: 'USD',
+      name: 'US Dollar',
+      symbol: '$',
+      isActive: true,
+      ...this.addAuditFields({})
+    },
+    {
+      id: 'CUR-003',
+      code: 'EUR',
+      name: 'Euro',
+      symbol: '€',
+      isActive: true,
+      ...this.addAuditFields({})
+    },
+    {
+      id: 'CUR-004',
+      code: 'JPY',
+      name: 'Japanese Yen',
+      symbol: '¥',
+      isActive: true,
+      ...this.addAuditFields({})
+    },
+    {
+      id: 'CUR-005',
+      code: 'GBP',
+      name: 'British Pound',
+      symbol: '£',
+      isActive: false,
+      ...this.addAuditFields({})
+    },
   ];
   
   private priceRequests = [
@@ -73,312 +143,606 @@ export class MockDataService {
       ...this.addAuditFields({})
     },
   ];
-  
+
   private customerMappings = [
-    { 
-      id: 'CM-001', 
-      customerId: 'CUST-001', 
-      customerName: 'Thai Summit Group', 
+    {
+      id: 'CM-001',
+      customerId: 'CUST-001',
+      customerName: 'Thai Summit Group',
       customerGroupId: 'CG-DOM',
-      ...this.addAuditFields({})
-    },
-    { 
-      id: 'CM-002', 
-      customerId: 'CUST-002', 
-      customerName: 'Honda Automobile', 
-      customerGroupId: 'CG-DOM',
-      ...this.addAuditFields({})
-    },
-    { 
-      id: 'CM-003', 
-      customerId: 'CUST-003', 
-      customerName: 'Toyota Motor', 
-      customerGroupId: 'CG-DOM',
+      customerGroupName: 'Domestic',
       ...this.addAuditFields({})
     },
   ];
-  
+
   private fabCosts = [
-    { 
-      id: 'FC-001', 
-      customerGroupId: 'CG-DOM', 
-      costValue: 150, 
-      currency: 'THB',
-      ...this.addAuditFields({})
-    },
-    { 
-      id: 'FC-002', 
-      customerGroupId: 'CG-EXP', 
-      costValue: 5, 
-      currency: 'USD',
+    {
+      id: 'FC-001',
+      customerGroupId: 'CG-DOM',
+      customerGroupName: 'Domestic',
+      costValue: 150.50,
+      currency: 'CUR-001',
+      currencyName: 'Thai Baht',
       ...this.addAuditFields({})
     },
   ];
-  
+
   private standardPrices = [
-    { 
-      id: 'SP-001', 
-      rmId: 'RM-AL-01', 
-      price: 85, 
-      currency: 'THB',
+    {
+      id: 'SP-001',
+      rmId: 'RM-AL-01',
+      rmName: 'Aluminum Sheet 1.2mm',
+      price: 85.00,
+      currency: 'CUR-001',
+      currencyName: 'Thai Baht',
       ...this.addAuditFields({})
     },
-    { 
-      id: 'SP-002', 
+    {
+      id: 'SP-002',
       rmId: 'RM-CU-02', 
-      price: 300, 
-      currency: 'THB',
+      rmName: 'Copper Wire 0.5mm',
+      price: 125.50,
+      currency: 'CUR-001',
+      currencyName: 'Thai Baht',
       ...this.addAuditFields({})
     },
   ];
-  
+
   private sellingFactors = [
-    { 
-      id: 'SF-001', 
-      pattern: 'Default', 
+    {
+      id: 'SF-001',
+      pattern: 'FAB-STAMP',
+      patternName: 'Stamping',
       factor: 1.25,
       ...this.addAuditFields({})
     },
+    {
+      id: 'SF-002',
+      pattern: 'FAB-CAST',
+      patternName: 'Casting', 
+      factor: 1.35,
+      ...this.addAuditFields({})
+    },
   ];
-  
+
   private lmePrices = [
-    { 
-      id: 'LME-001', 
-      customerGroupId: 'CG-EXP', 
-      itemGroupCode: 'AL', 
-      price: 2200, 
-      currency: 'USD',
+    {
+      id: 'LME-001',
+      customerGroupId: 'CG-DOM',
+      customerGroupName: 'Domestic',
+      itemGroupCode: 'IG-ALU',
+      itemGroupName: 'Aluminum',
+      price: 2850.00,
+      currency: 'CUR-002',
+      currencyName: 'US Dollar',
       ...this.addAuditFields({})
     },
   ];
-  
+
   private exchangeRates = [
-    { 
-      id: 'ER-001', 
-      customerGroupId: 'CG-EXP', 
-      sourceCurrency: 'USD', 
-      destinationCurrency: 'THB', 
-      rate: 36.5,
+    {
+      id: 'ER-001',
+      customerGroupId: 'CG-DOM',
+      customerGroupName: 'Domestic',
+      sourceCurrency: 'CUR-002',
+      sourceCurrencyName: 'US Dollar',
+      destinationCurrency: 'CUR-001',
+      destinationCurrencyName: 'Thai Baht',
+      rate: 35.50,
       ...this.addAuditFields({})
     },
   ];
 
-  // --- Audit Trail Helper Methods ---
-  private addAuditFields(data: any, isUpdate = false): any {
-    const currentDate = new Date().toISOString();
-    const currentUser = 'system'; // In real app, get from JWT token
-    
-    if (isUpdate) {
-      return {
-        ...data,
-        modifyDate: currentDate,
-        modifyUser: currentUser,
-      };
-    } else {
-      return {
-        ...data,
-        createDate: currentDate,
-        createUser: currentUser,
-        modifyDate: currentDate,
-        modifyUser: currentUser,
-      };
-    }
+  // Helper method for audit fields
+  private addAuditFields(data: any) {
+    const now = new Date().toISOString();
+    return {
+      ...data,
+      createDate: now,
+      createUser: 'system',
+      modifyDate: now,
+      modifyUser: 'system'
+    };
   }
 
-  private generateId(prefix: string): string {
-    return `${prefix}-${Date.now().toString().slice(-6)}`;
+  // --- D365 Data Methods ---
+  findAllD365RawMaterials() {
+    return this.d365RawMaterials;
   }
 
-  // --- Helper Methods ---
-  private updateItem(collection: any[], id: string, dto: any) {
-    const itemIndex = collection.findIndex(item => item.id === id);
-    if (itemIndex === -1) {
-      throw new NotFoundException(`Item with ID ${id} not found`);
-    }
-    
-    const updatedItem = {
-      ...collection[itemIndex],
-      ...dto,
-      ...this.addAuditFields(dto, true) // Add update audit fields
+  findAllD365FabPatterns() {
+    return this.d365FabPatterns;
+  }
+
+  findAllD365ItemGroups() {
+    return this.d365ItemGroups;
+  }
+
+  // --- Currencies Methods ---
+  findAllCurrencies() {
+    return this.currencies.filter(currency => currency.isActive);
+  }
+
+  addCurrency(currencyData: any) {
+    const newCurrency = {
+      id: `CUR-${String(Date.now()).slice(-5)}`,
+      ...currencyData,
+      isActive: currencyData.isActive === 'true',
+      ...this.addAuditFields({})
     };
     
-    collection[itemIndex] = updatedItem;
-    return updatedItem;
+    this.currencies.push(newCurrency);
+    return newCurrency;
   }
 
-  private deleteItem(collection: any[], id: string) {
-    const initialLength = collection.length;
-    const newCollection = collection.filter(item => item.id !== id);
-    if (newCollection.length === initialLength) {
-      throw new NotFoundException(`Item with ID ${id} not found`);
+  updateCurrency(id: string, currencyData: any) {
+    const index = this.currencies.findIndex(currency => currency.id === id);
+    if (index === -1) {
+      throw new NotFoundException(`Currency with ID "${id}" not found`);
     }
-    return newCollection;
+
+    this.currencies[index] = {
+      ...this.currencies[index],
+      ...currencyData,
+      isActive: currencyData.isActive === 'true',
+      modifyDate: new Date().toISOString(),
+      modifyUser: 'current-user'
+    };
+    
+    return this.currencies[index];
+  }
+
+  deleteCurrency(id: string) {
+    const index = this.currencies.findIndex(currency => currency.id === id);
+    if (index === -1) {
+      throw new NotFoundException(`Currency with ID "${id}" not found`);
+    }
+    
+    // Soft delete - mark as inactive instead of removing
+    this.currencies[index] = {
+      ...this.currencies[index],
+      isActive: false,
+      modifyDate: new Date().toISOString(),
+      modifyUser: 'current-user'
+    };
+    
+    return { message: `Currency "${this.currencies[index].name}" deactivated successfully` };
   }
 
   // --- Price Requests ---
-  findAllRequests() { 
-    return this.priceRequests.map(({ id, customerName, productName, status, createdBy, createdAt, costingBy }) => ({
-     id, customerName, productName, status, createdBy, createdAt, costingBy
-    }));
+  findAllRequests() {
+    return this.priceRequests;
   }
 
   findOneRequest(id: string) {
-    const request = this.priceRequests.find(r => r.id === id);
+    const request = this.priceRequests.find(req => req.id === id);
     if (!request) {
-      throw new NotFoundException(`Request with ID ${id} not found`);
+      throw new NotFoundException(`Price request with ID "${id}" not found`);
     }
     return request;
   }
 
-  addPriceRequest(requestDto: any) {
-    const newId = this.generateId('REQ');
+  addPriceRequest(requestData: any) {
     const newRequest = {
-      id: newId,
-      customerName: requestDto.formData.customerName || requestDto.formData.newCustomerName,
-      productName: requestDto.formData.productName || requestDto.formData.newProductName,
-      status: 'Pending' as const,
-      createdBy: 'Current User', // Placeholder
+      id: `REQ-${String(Date.now()).slice(-5)}`,
+      ...requestData,
       createdAt: new Date().toISOString().split('T')[0],
-      ...requestDto,
-      ...this.addAuditFields({})
     };
-    this.priceRequests.unshift(newRequest);
+    
+    // Auto-assign default group to new customers
+    if (requestData.customerType === 'new' && requestData.formData?.newCustomerName) {
+      // Find or create default customer group
+      let defaultGroup = this.customerGroups.find(g => g.name === 'Default');
+      if (!defaultGroup) {
+        defaultGroup = {
+          id: 'CG-DEFAULT',
+          name: 'Default',
+          type: 'Domestic',
+          description: 'Default group for new customers',
+          ...this.addAuditFields({})
+        };
+        this.customerGroups.push(defaultGroup);
+      }
+      
+      // Create temporary customer entry
+      const tempCustomerId = `TEMP-CUST-${String(Date.now()).slice(-5)}`;
+      const tempCustomer = {
+        id: tempCustomerId,
+        name: requestData.formData.newCustomerName
+      };
+      this.customers.push(tempCustomer);
+      
+      // Create customer mapping to default group
+      const newMapping = {
+        id: `CM-${String(Date.now()).slice(-5)}`,
+        customerId: tempCustomerId,
+        customerName: requestData.formData.newCustomerName,
+        customerGroupId: defaultGroup.id,
+        customerGroupName: defaultGroup.name,
+        ...this.addAuditFields({})
+      };
+      this.customerMappings.push(newMapping);
+    }
+    
+    this.priceRequests.push(newRequest);
     return newRequest;
   }
 
-  updatePriceRequest(id: string, requestDto: any) {
-    const requestIndex = this.priceRequests.findIndex(r => r.id === id);
-    if (requestIndex === -1) {
-      throw new NotFoundException(`Request with ID ${id} not found`);
+  updatePriceRequest(id: string, requestData: any) {
+    const index = this.priceRequests.findIndex(req => req.id === id);
+    if (index === -1) {
+      throw new NotFoundException(`Price request with ID "${id}" not found`);
     }
-
-    const existingRequest = this.priceRequests[requestIndex];
-    
-    const updatedRequest = {
-      ...existingRequest,
-      ...requestDto,
-      customerName: requestDto.formData.customerName || requestDto.formData.newCustomerName || existingRequest.customerName,
-      productName: requestDto.formData.productName || requestDto.formData.newProductName || existingRequest.productName,
-      id: id,
-      ...this.addAuditFields(requestDto, true)
-    };
-    
-    this.priceRequests[requestIndex] = updatedRequest;
-    console.log('[MockDataService] Updated Request:', updatedRequest.id);
-    return updatedRequest;
+    this.priceRequests[index] = { ...this.priceRequests[index], ...requestData };
+    return this.priceRequests[index];
   }
 
-  // --- Master Data for Search ---
-  findAllCustomers() { return this.customers; }
-  findAllProducts() { return this.products; }
-  findAllRawMaterials() { return this.rawMaterials; }
+  findAllCustomers() {
+    return this.customers;
+  }
+
+  findAllProducts() {
+    return this.products;
+  }
+
+  findAllRawMaterials() {
+    return this.rawMaterials;
+  }
 
   // --- Customer Groups ---
-  findAllCustomerGroups() { return this.customerGroups; }
-  
-  addCustomerGroup(groupDto: any) {
+  findAllCustomerGroups() {
+    return this.customerGroups;
+  }
+
+  addCustomerGroup(groupData: any) {
     const newGroup = {
-      id: this.generateId('CG'),
-      ...groupDto,
+      id: `CG-${String(Date.now()).slice(-5)}`,
+      ...groupData,
       ...this.addAuditFields({})
     };
     this.customerGroups.push(newGroup);
-    console.log('[MockDataService] Created Customer Group:', newGroup.id);
     return newGroup;
   }
 
-  updateCustomerGroup(id: string, groupDto: any) {
-    const result = this.updateItem(this.customerGroups, id, groupDto);
-    console.log('[MockDataService] Updated Customer Group:', id);
-    return result;
+  updateCustomerGroup(id: string, groupData: any) {
+    const index = this.customerGroups.findIndex(group => group.id === id);
+    if (index === -1) {
+      throw new NotFoundException(`Customer group with ID "${id}" not found`);
+    }
+    
+    this.customerGroups[index] = {
+      ...this.customerGroups[index],
+      ...groupData,
+      modifyDate: new Date().toISOString(),
+      modifyUser: 'current-user'
+    };
+    
+    return this.customerGroups[index];
   }
 
   deleteCustomerGroup(id: string) {
-    this.customerGroups = this.deleteItem(this.customerGroups, id);
-    console.log('[MockDataService] Deleted Customer Group:', id);
-    return { message: `Deleted group with ID ${id}` };
+    const index = this.customerGroups.findIndex(group => group.id === id);
+    if (index === -1) {
+      throw new NotFoundException(`Customer group with ID "${id}" not found`);
+    }
+    
+    const deletedGroup = this.customerGroups.splice(index, 1)[0];
+    return { message: `Customer group "${deletedGroup.name}" deleted successfully` };
   }
 
   // --- Customer Mappings ---
-  findAllCustomerMappings() { return this.customerMappings; }
-  
-  addCustomerMapping(mapping: any) {
+  findAllCustomerMappings() {
+    return this.customerMappings;
+  }
+
+  addCustomerMapping(mappingData: any) {
+    const customer = this.customers.find(c => c.id === mappingData.customerId);
+    const customerGroup = this.customerGroups.find(g => g.id === mappingData.customerGroupId);
+
     const newMapping = {
-      id: this.generateId('CM'),
-      ...mapping,
+      id: `CM-${String(Date.now()).slice(-5)}`,
+      ...mappingData,
+      customerName: customer?.name || '',
+      customerGroupName: customerGroup?.name || '',
       ...this.addAuditFields({})
     };
+    
     this.customerMappings.push(newMapping);
-    console.log('[MockDataService] Created Customer Mapping:', newMapping.id);
     return newMapping;
   }
-  
-  updateCustomerMapping(id: string, mappingDto: any) {
-    const result = this.updateItem(this.customerMappings, id, mappingDto);
-    console.log('[MockDataService] Updated Customer Mapping:', id);
-    return result;
+
+  updateCustomerMapping(id: string, mappingData: any) {
+    const index = this.customerMappings.findIndex(mapping => mapping.id === id);
+    if (index === -1) {
+      throw new NotFoundException(`Customer mapping with ID "${id}" not found`);
+    }
+
+    const customer = this.customers.find(c => c.id === mappingData.customerId);
+    const customerGroup = this.customerGroups.find(g => g.id === mappingData.customerGroupId);
+
+    this.customerMappings[index] = {
+      ...this.customerMappings[index],
+      ...mappingData,
+      customerName: customer?.name || '',
+      customerGroupName: customerGroup?.name || '',
+      modifyDate: new Date().toISOString(),
+      modifyUser: 'current-user'
+    };
+    
+    return this.customerMappings[index];
   }
-  
+
   deleteCustomerMapping(id: string) {
-    this.customerMappings = this.deleteItem(this.customerMappings, id);
-    console.log('[MockDataService] Deleted Customer Mapping:', id);
-    return { message: `Deleted mapping with ID ${id}` };
+    const index = this.customerMappings.findIndex(mapping => mapping.id === id);
+    if (index === -1) {
+      throw new NotFoundException(`Customer mapping with ID "${id}" not found`);
+    }
+    
+    const deletedMapping = this.customerMappings.splice(index, 1)[0];
+    return { message: `Customer mapping for "${deletedMapping.customerName}" deleted successfully` };
   }
 
   // --- Fab Costs ---
-  findAllFabCosts() { return this.fabCosts; }
-  
-  addFabCost(cost: any) {
+  findAllFabCosts() {
+    return this.fabCosts;
+  }
+
+  addFabCost(costData: any) {
+    const customerGroup = this.customerGroups.find(g => g.id === costData.customerGroupId);
+    const currency = this.currencies.find(c => c.id === costData.currency);
+    
     const newCost = {
-      id: this.generateId('FC'),
-      ...cost,
+      id: `FC-${String(Date.now()).slice(-5)}`,
+      ...costData,
+      customerGroupName: customerGroup?.name || '',
+      currencyName: currency?.name || '',
       ...this.addAuditFields({})
     };
+    
     this.fabCosts.push(newCost);
-    console.log('[MockDataService] Created Fab Cost:', newCost.id);
     return newCost;
   }
-  
-  updateFabCost(id: string, costDto: any) {
-    const result = this.updateItem(this.fabCosts, id, costDto);
-    console.log('[MockDataService] Updated Fab Cost:', id);
-    return result;
-  }
-  
-  deleteFabCost(id: string) {
-    this.fabCosts = this.deleteItem(this.fabCosts, id);
-    console.log('[MockDataService] Deleted Fab Cost:', id);
-    return { message: `Deleted fab cost with ID ${id}` };
-  }
-  
-  // --- Other Masters ---
-  findAllStandardPrices() { return this.standardPrices; }
-  findAllSellingFactors() { return this.sellingFactors; }
-  findAllLmePrices() { return this.lmePrices; }
 
-  // --- Exchange Rates ---
-  findAllExchangeRates() { return this.exchangeRates; }
-  
-  addExchangeRate(rate: any) {
-    const newRate = {
-      id: this.generateId('ER'),
-      ...rate,
+  updateFabCost(id: string, costData: any) {
+    const index = this.fabCosts.findIndex(cost => cost.id === id);
+    if (index === -1) {
+      throw new NotFoundException(`Fab cost with ID "${id}" not found`);
+    }
+
+    const customerGroup = this.customerGroups.find(g => g.id === costData.customerGroupId);
+    const currency = this.currencies.find(c => c.id === costData.currency);
+
+    this.fabCosts[index] = {
+      ...this.fabCosts[index],
+      ...costData,
+      customerGroupName: customerGroup?.name || '',
+      currencyName: currency?.name || '',
+      modifyDate: new Date().toISOString(),
+      modifyUser: 'current-user'
+    };
+    
+    return this.fabCosts[index];
+  }
+
+  deleteFabCost(id: string) {
+    const index = this.fabCosts.findIndex(cost => cost.id === id);
+    if (index === -1) {
+      throw new NotFoundException(`Fab cost with ID "${id}" not found`);
+    }
+    
+    const deletedCost = this.fabCosts.splice(index, 1)[0];
+    return { message: `Fab cost deleted successfully` };
+  }
+
+  // --- Standard Prices ---
+  findAllStandardPrices() {
+    return this.standardPrices;
+  }
+
+  addStandardPrice(priceData: any) {
+    const rawMaterial = this.d365RawMaterials.find(rm => rm.id === priceData.rmId);
+    const currency = this.currencies.find(c => c.id === priceData.currency);
+    
+    const newPrice = {
+      id: `SP-${String(Date.now()).slice(-5)}`,
+      ...priceData,
+      rmName: rawMaterial?.name || '',
+      currencyName: currency?.name || '',
       ...this.addAuditFields({})
     };
+    
+    this.standardPrices.push(newPrice);
+    return newPrice;
+  }
+
+  updateStandardPrice(id: string, priceData: any) {
+    const index = this.standardPrices.findIndex(price => price.id === id);
+    if (index === -1) {
+      throw new NotFoundException(`Standard price with ID "${id}" not found`);
+    }
+
+    const rawMaterial = this.d365RawMaterials.find(rm => rm.id === priceData.rmId);
+    const currency = this.currencies.find(c => c.id === priceData.currency);
+
+    this.standardPrices[index] = {
+      ...this.standardPrices[index],
+      ...priceData,
+      rmName: rawMaterial?.name || '',
+      currencyName: currency?.name || '',
+      modifyDate: new Date().toISOString(),
+      modifyUser: 'current-user'
+    };
+    
+    return this.standardPrices[index];
+  }
+
+  deleteStandardPrice(id: string) {
+    const index = this.standardPrices.findIndex(price => price.id === id);
+    if (index === -1) {
+      throw new NotFoundException(`Standard price with ID "${id}" not found`);
+    }
+    
+    const deletedPrice = this.standardPrices.splice(index, 1)[0];
+    return { message: `Standard price for "${deletedPrice.rmName}" deleted successfully` };
+  }
+
+  // --- Selling Factors ---
+  findAllSellingFactors() {
+    return this.sellingFactors;
+  }
+
+  addSellingFactor(factorData: any) {
+    const fabPattern = this.d365FabPatterns.find(fp => fp.id === factorData.pattern);
+    
+    const newFactor = {
+      id: `SF-${String(Date.now()).slice(-5)}`,
+      ...factorData,
+      patternName: fabPattern?.name || '',
+      ...this.addAuditFields({})
+    };
+    
+    this.sellingFactors.push(newFactor);
+    return newFactor;
+  }
+
+  updateSellingFactor(id: string, factorData: any) {
+    const index = this.sellingFactors.findIndex(factor => factor.id === id);
+    if (index === -1) {
+      throw new NotFoundException(`Selling factor with ID "${id}" not found`);
+    }
+
+    const fabPattern = this.d365FabPatterns.find(fp => fp.id === factorData.pattern);
+
+    this.sellingFactors[index] = {
+      ...this.sellingFactors[index],
+      ...factorData,
+      patternName: fabPattern?.name || '',
+      modifyDate: new Date().toISOString(),
+      modifyUser: 'current-user'
+    };
+    
+    return this.sellingFactors[index];
+  }
+
+  deleteSellingFactor(id: string) {
+    const index = this.sellingFactors.findIndex(factor => factor.id === id);
+    if (index === -1) {
+      throw new NotFoundException(`Selling factor with ID "${id}" not found`);
+    }
+    
+    const deletedFactor = this.sellingFactors.splice(index, 1)[0];
+    return { message: `Selling factor for "${deletedFactor.patternName}" deleted successfully` };
+  }
+
+  // --- LME Prices ---
+  findAllLmePrices() {
+    return this.lmePrices;
+  }
+
+  addLmePrice(priceData: any) {
+    const customerGroup = this.customerGroups.find(g => g.id === priceData.customerGroupId);
+    const itemGroup = this.d365ItemGroups.find(ig => ig.id === priceData.itemGroupCode);
+    const currency = this.currencies.find(c => c.id === priceData.currency);
+    
+    const newPrice = {
+      id: `LME-${String(Date.now()).slice(-5)}`,
+      ...priceData,
+      customerGroupName: customerGroup?.name || '',
+      itemGroupName: itemGroup?.name || '',
+      currencyName: currency?.name || '',
+      ...this.addAuditFields({})
+    };
+    
+    this.lmePrices.push(newPrice);
+    return newPrice;
+  }
+
+  updateLmePrice(id: string, priceData: any) {
+    const index = this.lmePrices.findIndex(price => price.id === id);
+    if (index === -1) {
+      throw new NotFoundException(`LME price with ID "${id}" not found`);
+    }
+
+    const customerGroup = this.customerGroups.find(g => g.id === priceData.customerGroupId);
+    const itemGroup = this.d365ItemGroups.find(ig => ig.id === priceData.itemGroupCode);
+    const currency = this.currencies.find(c => c.id === priceData.currency);
+
+    this.lmePrices[index] = {
+      ...this.lmePrices[index],
+      ...priceData,
+      customerGroupName: customerGroup?.name || '',
+      itemGroupName: itemGroup?.name || '',
+      currencyName: currency?.name || '',
+      modifyDate: new Date().toISOString(),
+      modifyUser: 'current-user'
+    };
+    
+    return this.lmePrices[index];
+  }
+
+  deleteLmePrice(id: string) {
+    const index = this.lmePrices.findIndex(price => price.id === id);
+    if (index === -1) {
+      throw new NotFoundException(`LME price with ID "${id}" not found`);
+    }
+    
+    const deletedPrice = this.lmePrices.splice(index, 1)[0];
+    return { message: `LME price deleted successfully` };
+  }
+
+  // --- Exchange Rates ---
+  findAllExchangeRates() {
+    return this.exchangeRates;
+  }
+
+  addExchangeRate(rateData: any) {
+    const customerGroup = this.customerGroups.find(g => g.id === rateData.customerGroupId);
+    const sourceCurrency = this.currencies.find(c => c.id === rateData.sourceCurrency);
+    const destinationCurrency = this.currencies.find(c => c.id === rateData.destinationCurrency);
+    
+    const newRate = {
+      id: `ER-${String(Date.now()).slice(-5)}`,
+      ...rateData,
+      customerGroupName: customerGroup?.name || '',
+      sourceCurrencyName: sourceCurrency?.name || '',
+      destinationCurrencyName: destinationCurrency?.name || '',
+      ...this.addAuditFields({})
+    };
+    
     this.exchangeRates.push(newRate);
-    console.log('[MockDataService] Created Exchange Rate:', newRate.id);
     return newRate;
   }
-  
-  updateExchangeRate(id: string, rateDto: any) {
-    const result = this.updateItem(this.exchangeRates, id, rateDto);
-    console.log('[MockDataService] Updated Exchange Rate:', id);
-    return result;
+
+  updateExchangeRate(id: string, rateData: any) {
+    const index = this.exchangeRates.findIndex(rate => rate.id === id);
+    if (index === -1) {
+      throw new NotFoundException(`Exchange rate with ID "${id}" not found`);
+    }
+
+    const customerGroup = this.customerGroups.find(g => g.id === rateData.customerGroupId);
+    const sourceCurrency = this.currencies.find(c => c.id === rateData.sourceCurrency);
+    const destinationCurrency = this.currencies.find(c => c.id === rateData.destinationCurrency);
+
+    this.exchangeRates[index] = {
+      ...this.exchangeRates[index],
+      ...rateData,
+      customerGroupName: customerGroup?.name || '',
+      sourceCurrencyName: sourceCurrency?.name || '',
+      destinationCurrencyName: destinationCurrency?.name || '',
+      modifyDate: new Date().toISOString(),
+      modifyUser: 'current-user'
+    };
+    
+    return this.exchangeRates[index];
   }
-  
+
   deleteExchangeRate(id: string) {
-    this.exchangeRates = this.deleteItem(this.exchangeRates, id);
-    console.log('[MockDataService] Deleted Exchange Rate:', id);
-    return { message: `Deleted exchange rate with ID ${id}` };
+    const index = this.exchangeRates.findIndex(rate => rate.id === id);
+    if (index === -1) {
+      throw new NotFoundException(`Exchange rate with ID "${id}" not found`);
+    }
+    
+    const deletedRate = this.exchangeRates.splice(index, 1)[0];
+    return { message: `Exchange rate deleted successfully` };
   }
 }
