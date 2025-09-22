@@ -119,9 +119,9 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
     const fetchAllMasterData = async () => {
       try {
         const [custRes, prodRes, rmRes] = await Promise.all([
-          fetch('http://localhost:3000/mock-data/customers'),
-          fetch('http://localhost:3000/mock-data/products'),
-          fetch('http://localhost:3000/mock-data/raw-materials')
+          fetch('http://localhost:3000/api/data/customers'),
+          fetch('http://localhost:3000/api/data/products'),
+          fetch('http://localhost:3000/api/data/raw-materials')
         ]);
         
         const [custData, prodData, rmData] = await Promise.all([
@@ -138,7 +138,48 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
 
       } catch (err) {
         console.error("Failed to fetch master data", err);
+<<<<<<< HEAD
+        setError("Could not load master data.");
+      }
+    };
+    
+    const fetchRequestData = async (id: string) => {
+      console.log("Editing request with ID:", id);
+      setIsLoading(true);
+      try {
+        const res = await fetch(`http://localhost:3000/api/data/requests/${id}`);
+        if (!res.ok) throw new Error('Request not found');
+        const data = await res.json();
+        
+        const initialFormData: FormData = data.formData || {};
+        setFormData(initialFormData);
+        
+        if(data.customerType === 'existing' && initialFormData.customerName) {
+          setCustomerType('existing');
+          setCustomerSearch(initialFormData.customerName);
+        } else {
+          setCustomerType('new');
+        }
+
+        if(data.productType === 'existing' && initialFormData.productName) {
+          setProductType('existing');
+          setProductSearch(initialFormData.productName);
+        } else {
+          setProductType('new');
+        }
+
+        setBoqItems(data.boqItems || []);
+        setCalculationResult(data.calculationResult || null);
+
+      } catch (err) {
+        console.error("Failed to fetch request data", err);
+        setError(`Could not load data for request ${id}.`);
+        onCancel();
+      } finally {
+        setIsLoading(false);
+=======
         setError("Could not load master data. Please check your connection.");
+>>>>>>> e68229fca67613e1dde52381a3d1e01490e3c98f
       }
     };
 
@@ -298,6 +339,12 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
 
   const handleCreateOrUpdateRequest = async (e: React.FormEvent) => {
     e.preventDefault();
+<<<<<<< HEAD
+    const endpoint = requestId ? `http://localhost:3000/api/data/requests/${requestId}` : 'http://localhost:3000/api/data/requests';
+    const method = requestId ? 'PUT' : 'POST';
+
+=======
+>>>>>>> e68229fca67613e1dde52381a3d1e01490e3c98f
     setIsLoading(true);
     setError('');
 

@@ -136,6 +136,15 @@ const PriceRequestList: React.FC<PriceRequestListProps> = ({ onNavigate, onEdit,
     setLoading(true);
     setError('');
     try {
+<<<<<<< HEAD
+      const response = await fetch('http://localhost:3000/api/data/requests');
+      if (!response.ok) throw new Error('Failed to fetch data');
+      const data = await response.json();
+      setRequests(data);
+    } catch (err) {
+      setError('Could not load price requests.');
+      console.error(err);
+=======
       const response = await api.get('/mock-data/requests');
       
       console.log('[PriceRequestList] API Response:', response.data);
@@ -157,6 +166,7 @@ const PriceRequestList: React.FC<PriceRequestListProps> = ({ onNavigate, onEdit,
       console.error('[PriceRequestList] Fetch error:', err);
       setError(err.message || 'Could not load price requests. Please check your connection.');
       setRequests([]);
+>>>>>>> e68229fca67613e1dde52381a3d1e01490e3c98f
     } finally {
       setLoading(false);
     }
