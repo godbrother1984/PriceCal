@@ -138,48 +138,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
 
       } catch (err) {
         console.error("Failed to fetch master data", err);
-<<<<<<< HEAD
-        setError("Could not load master data.");
-      }
-    };
-    
-    const fetchRequestData = async (id: string) => {
-      console.log("Editing request with ID:", id);
-      setIsLoading(true);
-      try {
-        const res = await fetch(`http://localhost:3000/api/data/requests/${id}`);
-        if (!res.ok) throw new Error('Request not found');
-        const data = await res.json();
-        
-        const initialFormData: FormData = data.formData || {};
-        setFormData(initialFormData);
-        
-        if(data.customerType === 'existing' && initialFormData.customerName) {
-          setCustomerType('existing');
-          setCustomerSearch(initialFormData.customerName);
-        } else {
-          setCustomerType('new');
-        }
-
-        if(data.productType === 'existing' && initialFormData.productName) {
-          setProductType('existing');
-          setProductSearch(initialFormData.productName);
-        } else {
-          setProductType('new');
-        }
-
-        setBoqItems(data.boqItems || []);
-        setCalculationResult(data.calculationResult || null);
-
-      } catch (err) {
-        console.error("Failed to fetch request data", err);
-        setError(`Could not load data for request ${id}.`);
-        onCancel();
-      } finally {
-        setIsLoading(false);
-=======
         setError("Could not load master data. Please check your connection.");
->>>>>>> e68229fca67613e1dde52381a3d1e01490e3c98f
       }
     };
 
@@ -191,17 +150,17 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
     if (requestId) {
       const loadRequestData = async () => {
         try {
-          const response = await fetch(`http://localhost:3000/mock-data/requests/${requestId}`);
+          const response = await fetch(`http://localhost:3000/api/data/requests/${requestId}`);
           const responseData = await response.json();
           const requestData = extractSingleApiData(responseData) as RequestData;
-          
+
           if (requestData) {
             setFormData(requestData.formData || {});
             setCustomerType(requestData.customerType || 'existing');
             setProductType(requestData.productType || 'existing');
             setBoqItems(requestData.boqItems || []);
             setCalculationResult(requestData.calculationResult || null);
-            
+
             // Set search values
             if (requestData.formData?.customerName) {
               setCustomerSearch(requestData.formData.customerName);
@@ -223,23 +182,33 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  // ฟังก์ชันดึง BOM จาก D365 สำหรับสินค้าเดิม
-  const fetchBOMFromD365 = async (productId: string) => {
+  // ฟังก์ชันดึง BOM จากฐานข้อมูลสำหรับสินค้าเดิม
+  const fetchBOMForProduct = async (productId: string) => {
     setIsFetchingBOM(true);
     try {
-      const response = await fetch(`http://localhost:3000/d365/bom/${productId}`);
+      const response = await fetch(`http://localhost:3000/api/data/bom/product/${productId}`);
       if (response.ok) {
         const bomData = await response.json();
-        const bomItems = extractApiArrayData(bomData) as BoqItem[];
-        setBoqItems(bomItems);
-        console.log(`[CreateRequest] BOM loaded for product ${productId}:`, bomItems.length, 'items');
+        const bomItems = extractApiArrayData(bomData) as any[];
+
+        // แปลง BOM data เป็น BOQ format
+        const boqItems: BoqItem[] = bomItems.map((bom, index) => ({
+          id: Date.now() + index,
+          rmId: bom.rawMaterial?.id || bom.rawMaterialId,
+          rmName: bom.rawMaterial?.name || 'Unknown Material',
+          rmUnit: bom.rawMaterial?.unit || 'pcs',
+          quantity: parseFloat(bom.quantity) || 0
+        }));
+
+        setBoqItems(boqItems);
+        console.log(`[CreateRequest] BOM loaded for product ${productId}:`, boqItems.length, 'items');
       } else {
         // ถ้าไม่พบ BOM ในระบบ ให้เคลียร์ BOQ และให้ผู้ใช้สร้างเอง
         setBoqItems([]);
         console.log(`[CreateRequest] No BOM found for product ${productId}, manual BOQ required`);
       }
     } catch (err) {
-      console.error("Failed to fetch BOM from D365", err);
+      console.error("Failed to fetch BOM from database", err);
       setBoqItems([]);
     } finally {
       setIsFetchingBOM(false);
@@ -257,9 +226,9 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
     handleFormChange('productName', product.name);
     setProductSearch(product.name);
     
-    // สำหรับสินค้าเดิม: ดึง Formula/BOM จาก D365 อัตโนมัติ
+    // สำหรับสินค้าเดิม: ดึง BOM จากฐานข้อมูลอัตโนมัติ
     if (productType === 'existing') {
-      await fetchBOMFromD365(product.id);
+      await fetchBOMForProduct(product.id);
     }
   };
 
@@ -339,12 +308,6 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
 
   const handleCreateOrUpdateRequest = async (e: React.FormEvent) => {
     e.preventDefault();
-<<<<<<< HEAD
-    const endpoint = requestId ? `http://localhost:3000/api/data/requests/${requestId}` : 'http://localhost:3000/api/data/requests';
-    const method = requestId ? 'PUT' : 'POST';
-
-=======
->>>>>>> e68229fca67613e1dde52381a3d1e01490e3c98f
     setIsLoading(true);
     setError('');
 
@@ -357,9 +320,9 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
         calculationResult,
       };
 
-      const url = requestId 
-        ? `http://localhost:3000/mock-data/requests/${requestId}` 
-        : 'http://localhost:3000/mock-data/requests';
+      const url = requestId
+        ? `http://localhost:3000/api/data/requests/${requestId}`
+        : 'http://localhost:3000/api/data/requests';
       const method = requestId ? 'PUT' : 'POST';
 
       const response = await fetch(url, {
@@ -560,7 +523,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                   onChange={(e) => setProductType(e.target.value as 'existing' | 'new')}
                   className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500"
                 />
-                <span className="ml-2 text-sm font-medium text-slate-700">สินค้าเดิม (ดึง BOM จาก D365)</span>
+                <span className="ml-2 text-sm font-medium text-slate-700">สินค้าเดิม (ดึง BOM อัตโนมัติ)</span>
               </label>
               <label className="flex items-center cursor-pointer">
                 <input 
@@ -619,7 +582,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                 <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
                   <div className="text-sm text-blue-800">
                     <strong>เลือกแล้ว:</strong> {formData.productName} ({formData.productId})
-                    {isFetchingBOM && <span className="ml-2">(กำลังโหลด BOM จาก D365...)</span>}
+                    {isFetchingBOM && <span className="ml-2">(กำลังโหลด BOM จากระบบ...)</span>}
                   </div>
                 </div>
               )}
@@ -660,7 +623,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold text-slate-800">
               3. รายการวัตถุดิบ (BOQ)
-              {productType === 'existing' && ' - จาก BOM ใน D365'}
+              {productType === 'existing' && ' - จาก BOM ในระบบ'}
               {productType === 'new' && ' - BOQ ชั่วคราว'}
             </h2>
             
@@ -673,7 +636,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    กำลังดึง BOM จาก D365...
+                    กำลังดึง BOM จากระบบ...
                   </div>
                 ) : (
                   <div className="text-green-600">✓ BOM โหลดแล้ว ({boqItems.length} รายการ)</div>
@@ -809,7 +772,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                           </button>
                         )}
                         {productType === 'existing' && (
-                          <span className="text-slate-400 text-xs">จาก D365</span>
+                          <span className="text-slate-400 text-xs">จากระบบ</span>
                         )}
                       </td>
                     </tr>
@@ -835,7 +798,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
               <svg className="mx-auto h-12 w-12 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.864-.833-2.634 0L3.232 16.5c-.77.833.192 2.5 1.732 2.5z" />
               </svg>
-              <h3 className="mt-2 text-sm font-medium text-yellow-800">ไม่พบ BOM ในระบบ D365</h3>
+              <h3 className="mt-2 text-sm font-medium text-yellow-800">ไม่พบ BOM ในระบบ</h3>
               <p className="mt-1 text-sm text-yellow-600">สินค้านี้อาจยังไม่มี BOM หรือต้องสร้าง BOQ ชั่วคราว</p>
             </div>
           )}
@@ -899,7 +862,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4" />
               </svg>
               <h3 className="mt-2 text-sm font-medium text-slate-900">
-                {isFetchingBOM ? 'กำลังโหลด BOM จาก D365...' : 'เพิ่มวัตถุดิบก่อนคำนวณ'}
+                {isFetchingBOM ? 'กำลังโหลด BOM จากระบบ...' : 'เพิ่มวัตถุดิบก่อนคำนวณ'}
               </h3>
               <p className="mt-1 text-sm text-slate-500">
                 {isFetchingBOM ? 'กรุณารอสักครู่...' : 'กรุณาเพิ่มรายการวัตถุดิบก่อนที่จะสามารถคำนวณราคาได้'}

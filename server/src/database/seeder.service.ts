@@ -12,6 +12,7 @@ import { Product } from '../entities/product.entity';
 import { RawMaterial } from '../entities/raw-material.entity';
 import { CustomerGroup } from '../entities/customer-group.entity';
 import { SystemConfig } from '../entities/system-config.entity';
+import { BOM } from '../entities/bom.entity';
 
 @Injectable()
 export class SeederService {
@@ -28,6 +29,8 @@ export class SeederService {
     private customerGroupRepository: Repository<CustomerGroup>,
     @InjectRepository(SystemConfig)
     private systemConfigRepository: Repository<SystemConfig>,
+    @InjectRepository(BOM)
+    private bomRepository: Repository<BOM>,
   ) {}
 
   async seed() {
@@ -38,6 +41,9 @@ export class SeederService {
 
     // สร้างข้อมูลหลัก
     await this.seedMasterData();
+
+    // สร้าง BOM data
+    await this.seedBOMData();
 
     console.log('✅ Database seeding completed!');
   }
@@ -118,5 +124,42 @@ export class SeederService {
     }
 
     console.log('📊 Master data seeded successfully');
+  }
+
+  private async seedBOMData() {
+    // BOM สำหรับ Products แต่ละตัว
+    const bomData = [
+      // BOM สำหรับ TS-PART-001 (FG-001)
+      { productId: 'FG-001', rawMaterialId: 'RM-AL-01', quantity: 2.5, notes: 'Main body material' },
+      { productId: 'FG-001', rawMaterialId: 'RM-CU-02', quantity: 0.8, notes: 'Wiring' },
+      { productId: 'FG-001', rawMaterialId: 'RM-ST-03', quantity: 1.2, notes: 'Reinforcement' },
+
+      // BOM สำหรับ HN-PART-245 (FG-002)
+      { productId: 'FG-002', rawMaterialId: 'RM-AL-01', quantity: 1.8, notes: 'Housing' },
+      { productId: 'FG-002', rawMaterialId: 'RM-PC-04', quantity: 0.5, notes: 'Insulation' },
+
+      // BOM สำหรับ TY-PART-889 (FG-003)
+      { productId: 'FG-003', rawMaterialId: 'RM-ST-03', quantity: 3.2, notes: 'Frame structure' },
+      { productId: 'FG-003', rawMaterialId: 'RM-CU-02', quantity: 1.5, notes: 'Electrical components' },
+      { productId: 'FG-003', rawMaterialId: 'RM-PC-04', quantity: 0.3, notes: 'Cover material' },
+    ];
+
+    for (const bom of bomData) {
+      const exists = await this.bomRepository.findOne({
+        where: {
+          productId: bom.productId,
+          rawMaterialId: bom.rawMaterialId
+        }
+      });
+
+      if (!exists) {
+        await this.bomRepository.save({
+          ...bom,
+          isActive: true
+        });
+      }
+    }
+
+    console.log('🔧 BOM data seeded successfully');
   }
 }

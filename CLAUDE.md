@@ -5,8 +5,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 PriceCal คือระบบคำนวณราคาสำหรับองค์กร ประกอบด้วย:
-- **Backend**: NestJS API Server (พอร์ต 3000)
+- **Backend**: NestJS API Server (พอร์ต 3000) + SQLite Database + TypeORM
 - **Frontend**: React + Vite + TypeScript + Tailwind CSS
+- **Database**: SQLite (development) / PostgreSQL (production)
+- **Authentication**: JWT + bcrypt (ไม่ใช่ hardcode)
 
 ## Development Commands
 
@@ -94,11 +96,22 @@ npm run preview           # preview production build
 - ใช้ Tailwind CSS classes สำหรับ styling
 - Component keys สำหรับ force re-render เมื่อจำเป็น
 
-### Current Limitations (Phase 1)
-- ไม่มีฐานข้อมูล (ใช้ in-memory และ localStorage)
-- Authentication แบบ hardcoded (admin/admin)
-- ข้อมูล pricing เป็น mock data
-- ไม่มี real JWT implementation
+### Database Schema (TypeORM Entities)
+- **User**: Authentication และ user management (UUID primary key)
+- **Customer**: ข้อมูลลูกค้า
+- **Product**: ข้อมูลสินค้า
+- **RawMaterial**: ข้อมูลวัตถุดิบ
+- **PriceRequest**: คำขอราคา (nullable foreign keys)
+- **CustomerGroup**: กลุ่มลูกค้า
+- **SystemConfig**: การตั้งค่าระบบ
+
+### Current Status (Updated 22 กันยายน 2568)
+- ✅ Database: SQLite พร้อม TypeORM entities
+- ✅ Authentication: JWT + bcrypt (แทนที่ hardcode)
+- ✅ API Endpoints: ทำงานได้ครบทุก endpoints
+- ✅ Data Seeding: ข้อมูลหลักถูกสร้างอัตโนมัติ
+- ✅ Foreign Key Management: จัดการได้อย่างถูกต้อง
+- ❌ ไม่มี mock data หรือ hardcode ใดๆ แล้ว
 
 ## Testing
 ยังไม่มี test framework ติดตั้ง - ควรเพิ่มในอนาคต

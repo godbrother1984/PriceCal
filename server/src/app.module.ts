@@ -1,13 +1,25 @@
-import { Module } from '@nestjs/common';
+import { Module, OnModuleInit } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { AuthController } from './auth/auth.controller';
-import { AuthService } from './auth/auth.service';
-import { MockDataController } from './mock-data/mock-data.controller';
-import { MockDataService } from './mock-data/mock-data.service';
+import { AuthModule } from './auth/auth.module';
 import { SetupController } from './setup/setup.controller';
-import { PricingController } from './pricing/pricing.controller'; // <-- Add this
-import { PricingService } from './pricing/pricing.service'; // <-- Add this
+import { PricingController } from './pricing/pricing.controller';
+import { PricingService } from './pricing/pricing.service';
+import { DataController } from './data/data.controller';
+import { DataService } from './data/data.service';
+import { SeederService } from './database/seeder.service';
+import { databaseConfig } from './database/database.config';
+
+// Entities
+import { User } from './entities/user.entity';
+import { Customer } from './entities/customer.entity';
+import { Product } from './entities/product.entity';
+import { RawMaterial } from './entities/raw-material.entity';
+import { CustomerGroup } from './entities/customer-group.entity';
+import { SystemConfig } from './entities/system-config.entity';
+import { PriceRequest } from './entities/price-request.entity';
+import { BOM } from './entities/bom.entity';
 
 @Module({
   imports: [
@@ -19,22 +31,22 @@ import { PricingService } from './pricing/pricing.service'; // <-- Add this
       RawMaterial,
       CustomerGroup,
       SystemConfig,
-      PriceRequest
+      PriceRequest,
+      BOM
     ]),
     AuthModule,
   ],
   controllers: [
     AppController,
-    AuthController,
-    MockDataController,
+    DataController,
     SetupController,
     PricingController,
   ],
   providers: [
     AppService,
-    AuthService,
-    MockDataService,
-    PricingService, // <-- Add this
+    DataService,
+    PricingService,
+    SeederService,
   ],
 })
 export class AppModule implements OnModuleInit {

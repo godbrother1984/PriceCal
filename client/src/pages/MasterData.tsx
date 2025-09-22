@@ -12,25 +12,6 @@ const api = axios.create({
   timeout: 10000,
 });
 
-<<<<<<< HEAD
-  useEffect(() => {
-    const fetchItems = async () => {
-      try {
-        const { data } = await api.get(`/api/data/${endpoint}`);
-        setItems(data);
-        const selectedItem = data.find((item: any) => item.id === value);
-        if (selectedItem) {
-          setSearchTerm(selectedItem[displayField]);
-        } else {
-          setSearchTerm('');
-        }
-      } catch (error) {
-        console.error(`Failed to fetch ${endpoint}`, error);
-      }
-    };
-    fetchItems();
-  }, [endpoint, value, displayField]);
-=======
 // Add response interceptor to handle API responses consistently
 api.interceptors.response.use(
   (response) => {
@@ -44,7 +25,6 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
->>>>>>> e68229fca67613e1dde52381a3d1e01490e3c98f
 
 // --- Types ---
 interface Column {
@@ -150,13 +130,8 @@ const SearchableSelect: React.FC<{
   const loadOptions = useCallback(async () => {
     setLoading(true);
     try {
-<<<<<<< HEAD
-      const response = await api.get(`/api/data/${endpoint}`);
-      setData(response.data);
-=======
       const response = await api.get(`/mock-data/${endpoint}`);
       setOptions(Array.isArray(response.data) ? response.data : []);
->>>>>>> e68229fca67613e1dde52381a3d1e01490e3c98f
     } catch (error) {
       console.error(`Error loading ${endpoint}:`, error);
       setOptions([]);
@@ -566,161 +541,16 @@ const MasterDataTable: React.FC<MasterDataTableProps> = ({
     setCurrentEditItem(null);
   };
 
-<<<<<<< HEAD
-  const handleSave = async (itemToSave: MasterDataType) => {
-    try {
-      if (itemToSave.id) {
-        await api.put(`/api/data/${endpoint}/${itemToSave.id}`, itemToSave);
-      } else {
-        await api.post(`/api/data/${endpoint}`, itemToSave);
-      }
-      fetchData(); // Refresh data
-    } catch (error) {
-      console.error(`Failed to save item to ${endpoint}`, error);
-    } finally {
-      handleCloseModal();
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    if (window.confirm('Are you sure you want to delete this item?')) {
-      try {
-        await api.delete(`/api/data/${endpoint}/${id}`);
-        fetchData(); // Refresh data
-      } catch (error) {
-        console.error(`Failed to delete item from ${endpoint}`, error);
-      }
-    }
-  };
-
-  return (
-    <div>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold text-slate-800">{title}</h2>
-        <button onClick={() => handleOpenModal()} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold">Add New</button>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm text-left text-slate-500">
-            <thead className="text-xs text-slate-700 uppercase bg-slate-100">
-                <tr>
-                    {columns.map(col => <th key={col.key} scope="col" className="px-6 py-3">{col.label}</th>)}
-                    <th scope="col" className="px-6 py-3 text-right">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr><td colSpan={columns.length + 1} className="text-center p-4">Loading...</td></tr>
-              ) : data.map(item => (
-                  <tr key={item.id} className="bg-white border-b hover:bg-slate-50">
-                      {columns.map(col => <td key={col.key} className="px-6 py-4">{item[col.key]}</td>)}
-                      <td className="px-6 py-4 text-right space-x-4">
-                          <button onClick={() => handleOpenModal(item)} className="font-medium text-blue-600 hover:underline">Edit</button>
-                          <button onClick={() => handleDelete(item.id)} className="font-medium text-red-600 hover:underline">Delete</button>
-                      </td>
-                  </tr>
-              ))}
-            </tbody>
-        </table>
-      </div>
-      <MasterDataFormModal isOpen={isModalOpen} onClose={handleCloseModal} onSave={handleSave} item={editingItem} columns={columns} title={title} />
-    </div>
-  );
-};
-
-
-// --- Customer Mapping View Component (CRUD Enabled) ---
-const CustomerMappingView: React.FC = () => {
-  const [groupedMappings, setGroupedMappings] = useState<{ [groupName: string]: CustomerMapping[] }>({});
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-  // States for Add Modal
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [newMapping, setNewMapping] = useState({ customerId: '', customerGroupId: '' });
-
-  const fetchData = useCallback(async () => {
-    setIsLoading(true);
-    setError('');
-    try {
-      const [mappingsRes, groupsRes] = await Promise.all([
-        api.get('/api/data/customer-mappings'),
-        api.get('/api/data/customer-groups')
-      ]);
-      const mappingsData: CustomerMapping[] = mappingsRes.data;
-      const groupsData: CustomerGroup[] = groupsRes.data;
-      const groupNameMap = new Map(groupsData.map(g => [g.id, g.name]));
-
-      const grouped = mappingsData.reduce((acc, mapping) => {
-        const groupName = groupNameMap.get(mapping.customerGroupId) || mapping.customerGroupId;
-        if (!acc[groupName]) { acc[groupName] = []; }
-        acc[groupName].push(mapping);
-        return acc;
-      }, {} as { [groupName: string]: CustomerMapping[] });
-      setGroupedMappings(grouped);
-    } catch (err) {
-      console.error("Failed to fetch customer mappings", err);
-      setError('Could not load customer mapping data.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  const handleRemove = async (mappingId: string) => {
-    if(window.confirm('Are you sure you want to remove this mapping?')) {
-      try {
-        await api.delete(`/api/data/customer-mappings/${mappingId}`);
-        fetchData(); // Refresh
-      } catch (err) {
-        console.error('Failed to remove mapping', err);
-        alert('Error: Could not remove mapping.');
-      }
-    }
-  };
-
-  const handleAddMapping = async () => {
-    if (!newMapping.customerId || !newMapping.customerGroupId) {
-      alert('Please select both a customer and a group.');
-      return;
-    }
-    try {
-      await api.post('/api/data/customer-mappings', newMapping);
-      setIsAddModalOpen(false);
-      setNewMapping({ customerId: '', customerGroupId: '' });
-      fetchData(); // Refresh
-    } catch (err) {
-      console.error('Failed to add mapping', err);
-      alert('Error: Could not add mapping.');
-    }
-  };
-  
-  return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-semibold text-slate-800">Customer Mappings (Grouped View)</h2>
-        <button onClick={() => setIsAddModalOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold">
-          Add New Mapping
-        </button>
-      </div>
-
-      {isLoading && <p className="text-slate-500">Loading mappings...</p>}
-      {error && <p className="text-red-500">{error}</p>}
-      
-      {!isLoading && !error && Object.keys(groupedMappings).length === 0 && (
-          <p className="text-slate-500 italic">No customer mappings found.</p>
-=======
   if (loading) return <LoadingSpinner message={`Loading ${title.toLowerCase()}...`} />;
 
   return (
     <div className="space-y-6">
       {successMessage && (
-        <SuccessMessage 
-          message={successMessage} 
-          onDismiss={() => setSuccessMessage(null)} 
+        <SuccessMessage
+          message={successMessage}
+          onDismiss={() => setSuccessMessage(null)}
         />
->>>>>>> e68229fca67613e1dde52381a3d1e01490e3c98f
+      )}
       )}
 
       {error && (

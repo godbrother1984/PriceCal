@@ -67,6 +67,27 @@ export class DataController {
     return this.dataService.deleteCustomerGroup(id);
   }
 
+  // --- BOM (Bill of Materials) ---
+  @Get('bom/product/:productId')
+  findBOMByProductId(@Param('productId') productId: string) {
+    return this.dataService.findBOMByProductId(productId);
+  }
+
+  @Post('bom')
+  addBOM(@Body() bomDto: any) {
+    return this.dataService.addBOM(bomDto);
+  }
+
+  @Put('bom/:id')
+  updateBOM(@Param('id') id: string, @Body() bomDto: any) {
+    return this.dataService.updateBOM(id, bomDto);
+  }
+
+  @Delete('bom/:id')
+  deleteBOM(@Param('id') id: string) {
+    return this.dataService.deleteBOM(id);
+  }
+
   // --- Other endpoints for compatibility ---
   @Get('customer-mappings')
   findAllCustomerMappings() {

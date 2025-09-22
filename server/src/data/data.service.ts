@@ -11,6 +11,7 @@ import { RawMaterial } from '../entities/raw-material.entity';
 import { PriceRequest } from '../entities/price-request.entity';
 import { CustomerGroup } from '../entities/customer-group.entity';
 import { User } from '../entities/user.entity';
+import { BOM } from '../entities/bom.entity';
 
 @Injectable()
 export class DataService {
@@ -27,6 +28,8 @@ export class DataService {
     private customerGroupRepository: Repository<CustomerGroup>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @InjectRepository(BOM)
+    private bomRepository: Repository<BOM>,
   ) {}
 
   // --- Price Requests ---
@@ -178,6 +181,44 @@ export class DataService {
       throw new NotFoundException(`Customer group with ID ${id} not found`);
     }
     return { message: `Deleted group with ID ${id}` };
+  }
+
+  // --- BOM (Bill of Materials) ---
+  async findBOMByProductId(productId: string) {
+    return this.bomRepository.find({
+      where: { productId, isActive: true },
+      relations: ['rawMaterial'],
+      order: { createdAt: 'ASC' }
+    });
+  }
+
+  async addBOM(bomDto: any) {
+    const newBOM = this.bomRepository.create({
+      productId: bomDto.productId,
+      rawMaterialId: bomDto.rawMaterialId,
+      quantity: bomDto.quantity,
+      notes: bomDto.notes || '',
+      isActive: true
+    });
+    return this.bomRepository.save(newBOM);
+  }
+
+  async updateBOM(id: string, bomDto: any) {
+    const bom = await this.bomRepository.findOne({ where: { id } });
+    if (!bom) {
+      throw new NotFoundException(`BOM with ID ${id} not found`);
+    }
+
+    Object.assign(bom, bomDto);
+    return this.bomRepository.save(bom);
+  }
+
+  async deleteBOM(id: string) {
+    const result = await this.bomRepository.update(id, { isActive: false });
+    if (result.affected === 0) {
+      throw new NotFoundException(`BOM with ID ${id} not found`);
+    }
+    return { message: `Deleted BOM with ID ${id}` };
   }
 
   // Note: Other methods (customer mappings, fab costs, etc.) should also be implemented
