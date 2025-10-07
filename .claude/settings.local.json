@@ -5,7 +5,32 @@
       "Bash(curl:*)",
       "Bash(npm run start:dev:*)",
       "Bash(npm install)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run build:*)",
+      "Bash(timeout 10 npm run dev)",
+      "Bash(findstr:*)",
+      "Bash(netstat:*)",
+      "Bash(taskkill:*)",
+      "Bash(cmd /c:*)",
+      "Bash(wmic process where:*)",
+      "Bash(find:*)",
+      "Bash(/bashes)",
+      "Bash(npx vite:*)",
+      "Bash(npm run lint)",
+      "Bash(npx eslint:*)",
+      "Bash(npm run type-check:*)",
+      "Bash(npx kill-port:*)",
+      "Bash(awk:*)",
+      "Bash(python:*)",
+      "Bash(powershell:*)",
+      "Bash(dir:*)",
+      "Bash(timeout 10 npm run start:dev)",
+      "Bash(timeout:*)",
+      "Bash(sqlite3:*)",
+      "Bash(cat:*)",
+      "Bash(tasklist)",
+      "Bash(del database.sqlite)"
     ]
   }
 }

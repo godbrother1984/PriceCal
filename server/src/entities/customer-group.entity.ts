@@ -1,29 +1,26 @@
 // path: server/src/entities/customer-group.entity.ts
-// version: 1.0 (Initial Database Schema)
-// last-modified: 22 กันยายน 2568 10:30
+// version: 2.1 (Remove type, Add isDefault flag)
+// last-modified: 1 ตุลาคม 2568 18:30
 
-import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryColumn, Column } from 'typeorm';
+import { BaseEntity } from './base.entity';
 
 @Entity('customer_groups')
-export class CustomerGroup {
+export class CustomerGroup extends BaseEntity {
   @PrimaryColumn()
-  id: string; // CG-DOM
+  id: string; // CG-001, CG-002, etc.
 
   @Column()
   name: string;
 
-  @Column()
-  type: string; // Domestic, Export
-
   @Column({ nullable: true })
   description: string;
+
+  @Column({ default: false })
+  isDefault: boolean; // กลุ่ม default สำหรับลูกค้าที่ไม่ได้อยู่กลุ่มใดๆ
 
   @Column({ default: true })
   isActive: boolean;
 
-  @CreateDateColumn()
-  createdAt: Date;
-
-  @UpdateDateColumn()
-  updatedAt: Date;
+  // Note: createdAt, updatedAt, createdBy, updatedBy are inherited from BaseEntity
 }

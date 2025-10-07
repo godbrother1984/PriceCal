@@ -1,6 +1,6 @@
 // path: server/src/pricing/pricing.service.ts
 // version: 2.0 (Database-based Pricing Calculation)
-// last-modified: 22 กันยายน 2568 11:00
+// last-modified: 23 กันยายน 2568 13:20
 
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -18,42 +18,93 @@ export class PricingService {
   ) {}
 
   async calculatePrice(data: any): Promise<any> {
-    console.log('[Pricing Service] Calculating price for:', data);
+    console.log('[Pricing Service] Calculating price with real data:', data);
 
     try {
-      // ดึงข้อมูลจาก Database
-      const rawMaterials = await this.rawMaterialRepository.find({ where: { isActive: true } });
-      const customerGroups = await this.customerGroupRepository.find({ where: { isActive: true } });
+      // คำนวณราคาฐานจาก BOQ Items และ Standard Prices จริง
+      let basePrice = 0;
+      let boqCalculations = [];
 
-      // Logic การคำนวณราคาตาม Business Rules
-      let basePrice = 800; // ราคาพื้นฐาน
+      if (data.boqItems && data.boqItems.length > 0 && data.standardPrices && data.standardPrices.length > 0) {
+        // คำนวณราคาตาม BOQ Items จริง
+        for (const boqItem of data.boqItems) {
+          const standardPrice = data.standardPrices.find((sp: any) =>
+            sp.rmId === boqItem.rmId || sp.rawMaterialId === boqItem.rmId
+          );
 
-      // ปรับราคาตาม Customer Type
-      if (data.customerType === 'Export') {
-        basePrice *= 1.15; // เพิ่ม 15% สำหรับลูกค้าต่างประเทศ
+          if (standardPrice) {
+            const itemCost = boqItem.quantity * (standardPrice.price || 0);
+            basePrice += itemCost;
+            boqCalculations.push({
+              rmName: boqItem.rmName,
+              quantity: boqItem.quantity,
+              unitPrice: standardPrice.price,
+              totalCost: itemCost.toFixed(2)
+            });
+          } else {
+            // ถ้าไม่พบราคามาตรฐาน ใช้ราคาเฉลี่ย 100 THB/unit
+            const defaultPrice = 100;
+            const itemCost = boqItem.quantity * defaultPrice;
+            basePrice += itemCost;
+            boqCalculations.push({
+              rmName: boqItem.rmName,
+              quantity: boqItem.quantity,
+              unitPrice: defaultPrice,
+              totalCost: itemCost.toFixed(2),
+              note: 'Default price used (no standard price found)'
+            });
+          }
+        }
+      } else {
+        // ถ้าไม่มี BOQ หรือ Standard Prices ใช้ราคาฐาน 800
+        basePrice = 800;
       }
 
-      // ปรับราคาตาม Product Complexity (จากจำนวน Raw Materials)
-      if (data.boqItems && data.boqItems.length > 0) {
-        const complexityFactor = 1 + (data.boqItems.length * 0.05); // เพิ่ม 5% ต่อ material
-        basePrice *= complexityFactor;
+      // ปรับราคาตาม Customer Group จริง
+      let customerMultiplier = 1.0;
+      if (data.customerGroup) {
+        if (data.customerGroup.type === 'Export') {
+          customerMultiplier = 1.15; // +15% สำหรับ Export
+        } else if (data.customerGroup.type === 'Domestic') {
+          customerMultiplier = 1.0; // ราคาปกติสำหรับ Domestic
+        }
+      }
+      basePrice *= customerMultiplier;
+
+      // ใช้ Selling Factor จริงจากข้อมูล
+      let sellingFactor = 1.25; // Default 25% markup
+      if (data.sellingFactors && data.sellingFactors.length > 0) {
+        // ใช้ selling factor แรกที่พบ
+        const factor = data.sellingFactors[0];
+        sellingFactor = factor.factor || factor.sellingFactor || 1.25;
       }
 
-      const sellingFactor = 1.25; // Markup 25%
+      // คำนวณราคาสุดท้าย
       const finalPrice = basePrice * sellingFactor;
+
+      // หา Currency จาก Exchange Rates หรือใช้ THB เป็นค่าเริ่มต้น
+      let currency = 'THB';
+      if (data.exchangeRates && data.exchangeRates.length > 0) {
+        currency = data.exchangeRates[0].sourceCurrencyCode ||
+                  data.exchangeRates[0].destinationCurrencyCode || 'THB';
+      }
 
       return {
         success: true,
-        message: 'Price calculated successfully.',
+        message: 'Price calculated successfully using real data.',
         calculation: {
           basePrice: basePrice.toFixed(2),
           sellingFactor: sellingFactor,
           finalPrice: finalPrice.toFixed(2),
-          currency: 'THB',
+          currency: currency,
+          customerMultiplier: customerMultiplier,
+          boqCalculations: boqCalculations
         },
         metadata: {
-          rawMaterialsCount: rawMaterials.length,
-          customerGroupsCount: customerGroups.length,
+          standardPricesUsed: data.standardPrices?.length || 0,
+          sellingFactorsUsed: data.sellingFactors?.length || 0,
+          exchangeRatesUsed: data.exchangeRates?.length || 0,
+          customerGroup: data.customerGroup?.name || 'None',
           calculatedAt: new Date().toISOString(),
         }
       };

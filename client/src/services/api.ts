@@ -5,7 +5,7 @@
 import axios from 'axios';
 
 // 1. กำหนด Base URL ของ Backend ที่นี่ที่เดียว
-const API_BASE_URL = 'http://localhost:3000';
+const API_BASE_URL = 'http://localhost:3001';
 
 // 2. สร้าง instance ของ axios พร้อมตั้งค่าพื้นฐาน
 const api = axios.create({

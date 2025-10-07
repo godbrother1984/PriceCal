@@ -11,8 +11,8 @@ async function bootstrap() {
   // Enable CORS to allow frontend to connect
   app.enableCors();
 
-  await app.listen(3000);
-  console.log(`🚀 Backend application is running on: http://localhost:3000`);
+  await app.listen(3001);
+  console.log(`🚀 Backend application is running on: http://localhost:3001`);
   console.log(`📊 Database: SQLite (database.sqlite)`);
   console.log(`👤 Default admin user: admin/admin`);
 }

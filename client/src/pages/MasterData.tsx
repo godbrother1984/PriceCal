@@ -1,14 +1,17 @@
 // path: client/src/pages/MasterData.tsx
-// version: 3.0 (Clean Version - No Syntax Errors)
-// last-modified: 1 กันยายน 2568
+// version: 3.8 (Update Customer Groups - Remove type, Add isDefault)
+// last-modified: 1 ตุลาคม 2568 18:35
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
+import ActivityLogs from '../components/ActivityLogs';
+import ImportManager from '../components/ImportManager';
+import MasterDataViewer from '../components/MasterDataViewer';
 
 // --- API Configuration ---
 const api = axios.create({
-  baseURL: 'http://localhost:3000',
+  baseURL: 'http://localhost:3001',
   timeout: 10000,
 });
 
@@ -130,7 +133,7 @@ const SearchableSelect: React.FC<{
   const loadOptions = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await api.get(`/mock-data/${endpoint}`);
+      const response = await api.get(`/api/data/${endpoint}`);
       setOptions(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       console.error(`Error loading ${endpoint}:`, error);
@@ -328,7 +331,14 @@ const EditModal: React.FC<EditModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       if (editingItem) {
-        setFormData({ ...editingItem });
+        // แปลง boolean values เป็น string สำหรับ select dropdowns
+        const formattedData = { ...editingItem };
+        columns.forEach(col => {
+          if (col.options && typeof formattedData[col.key] === 'boolean') {
+            formattedData[col.key] = formattedData[col.key].toString();
+          }
+        });
+        setFormData(formattedData);
       } else {
         const initialData: any = {};
         columns.forEach(col => {
@@ -467,7 +477,7 @@ const MasterDataTable: React.FC<MasterDataTableProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const response = await api.get(`/mock-data/${endpoint}`);
+      const response = await api.get(`/api/data/${endpoint}`);
       setData(Array.isArray(response.data) ? response.data : []);
     } catch (err) {
       setError(`Failed to load ${title.toLowerCase()}`);
@@ -501,10 +511,10 @@ const MasterDataTable: React.FC<MasterDataTableProps> = ({
   const handleSave = async (formData: any) => {
     try {
       if (currentEditItem) {
-        await api.put(`/mock-data/${endpoint}/${currentEditItem.id}`, formData);
+        await api.put(`/api/data/${endpoint}/${currentEditItem.id}`, formData);
         setSuccessMessage(`${title.slice(0, -1)} updated successfully`);
       } else {
-        await api.post(`/mock-data/${endpoint}`, formData);
+        await api.post(`/api/data/${endpoint}`, formData);
         setSuccessMessage(`${title.slice(0, -1)} created successfully`);
       }
       
@@ -525,7 +535,7 @@ const MasterDataTable: React.FC<MasterDataTableProps> = ({
     }
 
     try {
-      await api.delete(`/mock-data/${endpoint}/${item.id}`);
+      await api.delete(`/api/data/${endpoint}/${item.id}`);
       setSuccessMessage(`${title.slice(0, -1)} deleted successfully`);
       loadData();
       
@@ -550,7 +560,6 @@ const MasterDataTable: React.FC<MasterDataTableProps> = ({
           message={successMessage}
           onDismiss={() => setSuccessMessage(null)}
         />
-      )}
       )}
 
       {error && (
@@ -639,7 +648,19 @@ const MasterDataTable: React.FC<MasterDataTableProps> = ({
                           if (column.key === 'isActive') {
                             return item[column.key] ? 'Active' : 'Inactive';
                           }
-                          return item[column.key] || 'N/A';
+                          if (column.key === 'isDefault') {
+                            const isDefault = item[column.key] === true || item[column.key] === 'true';
+                            return isDefault ? (
+                              <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
+                                Yes
+                              </span>
+                            ) : 'No';
+                          }
+                          const value = item[column.key];
+                          if (value === null || value === undefined || value === '') {
+                            return 'N/A';
+                          }
+                          return value;
                         })()}
                       </td>
                     ))}
@@ -745,13 +766,13 @@ const CustomerGroups: React.FC = () => {
   const columns: Column[] = [
     { key: 'name', label: 'Group Name', required: true },
     { key: 'description', label: 'Description' },
-    { 
-      key: 'type', 
-      label: 'Type', 
-      required: true,
+    {
+      key: 'isDefault',
+      label: 'Default Group',
+      type: 'select',
       options: [
-        { value: 'Domestic', label: 'Domestic' },
-        { value: 'Export', label: 'Export' }
+        { value: 'true', label: 'Yes' },
+        { value: 'false', label: 'No' }
       ]
     }
   ];
@@ -770,112 +791,1021 @@ const CustomerMappings: React.FC = () => {
 };
 
 const FabCost: React.FC = () => {
+  const [data, setData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [currentEditItem, setCurrentEditItem] = useState<any>(null);
+  const [historyData, setHistoryData] = useState<any[]>([]);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
   const columns: Column[] = [
-    { 
-      key: 'customerGroupId', 
-      label: 'Customer Group', 
-      required: true,
-      endpoint: 'customer-groups',
-      displayKey: 'name'
-    },
-    { key: 'costValue', label: 'Cost Value', type: 'number', required: true },
-    { 
-      key: 'currency', 
-      label: 'Currency', 
+    { key: 'name', label: 'Name', type: 'text', required: true },
+    { key: 'costPerHour', label: 'Cost Per Hour', type: 'number', required: true },
+    {
+      key: 'currency',
+      label: 'Currency',
       required: true,
       endpoint: 'currencies',
-      displayKey: 'name'
-    }
+      displayKey: 'code'
+    },
+    { key: 'description', label: 'Description', type: 'text', required: false },
+    { key: 'changeReason', label: 'Change Reason', type: 'text', required: false }
   ];
 
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await api.get('/api/data/fab-costs');
+      setData(Array.isArray(response.data) ? response.data : []);
+    } catch (err) {
+      setError('Failed to load fab costs');
+      console.error('Load data error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleAdd = () => {
+    setCurrentEditItem(null);
+    setShowModal(true);
+  };
+
+  const handleEdit = (item: any) => {
+    setCurrentEditItem(item);
+    setShowModal(true);
+  };
+
+  const handleViewHistory = async (item: any) => {
+    try {
+      const response = await api.get(`/api/data/fab-costs/history/${item.id}`);
+      setHistoryData(response.data);
+      setShowHistoryModal(true);
+    } catch (err) {
+      console.error('Failed to load history:', err);
+      setError('Failed to load cost history');
+    }
+  };
+
+  const handleSave = async (formData: any) => {
+    try {
+      if (currentEditItem) {
+        await api.put(`/api/data/fab-costs/${currentEditItem.id}`, formData);
+        setSuccessMessage('Fab Cost updated successfully');
+      } else {
+        await api.post('/api/data/fab-costs', formData);
+        setSuccessMessage('Fab Cost created successfully');
+      }
+
+      setShowModal(false);
+      setCurrentEditItem(null);
+      loadData();
+
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      console.error('Save error:', err);
+      setError(err.response?.data?.message || 'Failed to save fab cost');
+    }
+  };
+
+  const handleDelete = async (item: any) => {
+    if (!confirm('Are you sure you want to delete this fab cost?')) {
+      return;
+    }
+
+    try {
+      await api.delete(`/api/data/fab-costs/${item.id}`);
+      setSuccessMessage('Fab Cost deleted successfully');
+      loadData();
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      console.error('Delete error:', err);
+      setError(err.response?.data?.message || 'Failed to delete fab cost');
+    }
+  };
+
+  const handleApprove = async (item: any) => {
+    if (!confirm('Are you sure you want to approve this fab cost?')) {
+      return;
+    }
+
+    try {
+      await api.put(`/api/data/fab-costs/${item.id}/approve`);
+      setSuccessMessage('Fab Cost approved successfully');
+      loadData();
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      console.error('Approve error:', err);
+      setError(err.response?.data?.message || 'Failed to approve fab cost');
+    }
+  };
+
+  if (loading) return <LoadingSpinner message="Loading fab costs..." />;
+
   return (
-    <MasterDataTable
-      title="Fab Costs"
-      endpoint="fab-costs"
-      columns={columns}
-    />
+    <div className="space-y-6">
+      {successMessage && (
+        <SuccessMessage
+          message={successMessage}
+          onDismiss={() => setSuccessMessage(null)}
+        />
+      )}
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3 flex-1">
+              <p className="text-sm font-medium text-red-800">{error}</p>
+            </div>
+            <div className="ml-4 flex-shrink-0">
+              <button
+                onClick={() => setError(null)}
+                className="text-red-400 hover:text-red-600"
+              >
+                <span className="sr-only">Dismiss</span>
+                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold text-slate-900">Fab Costs</h2>
+        <button
+          onClick={handleAdd}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Add New
+        </button>
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <table className="min-w-full divide-y divide-slate-200">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Version</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Name</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Cost/Hour</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Currency</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Status</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-slate-200">
+            {data.map((item) => (
+              <tr key={item.id} className="hover:bg-slate-50">
+                <td className="px-4 py-3 text-sm">
+                  <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
+                    v{item.version || 1}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-sm">{item.name}</td>
+                <td className="px-4 py-3 text-sm">{item.costPerHour}</td>
+                <td className="px-4 py-3 text-sm">{item.currency}</td>
+                <td className="px-4 py-3 text-sm">
+                  <span className={`px-2 py-1 rounded text-xs font-medium ${
+                    item.status === 'Approved' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                  }`}>
+                    {item.status}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    {item.status !== 'Approved' && (
+                      <button
+                        onClick={() => handleApprove(item)}
+                        className="text-slate-400 hover:text-green-600 transition-colors"
+                        title="Approve"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleViewHistory(item)}
+                      className="text-slate-400 hover:text-purple-600 transition-colors"
+                      title="View History"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handleEdit(item)}
+                      className="text-slate-400 hover:text-blue-600 transition-colors"
+                      title="Edit"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handleDelete(item)}
+                      className="text-slate-400 hover:text-red-600 transition-colors"
+                      title="Delete"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <EditModal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        onSave={handleSave}
+        title={`${currentEditItem ? 'Edit' : 'Add'} Fab Cost`}
+        columns={columns}
+        editingItem={currentEditItem}
+      />
+
+      {showHistoryModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden">
+            <div className="p-6 border-b border-slate-200">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold">Fab Cost History</h3>
+                <button
+                  onClick={() => setShowHistoryModal(false)}
+                  className="text-slate-400 hover:text-slate-600"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div className="p-6 overflow-y-auto max-h-[60vh]">
+              <table className="min-w-full divide-y divide-slate-200">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Version</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Name</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Cost/Hour</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Currency</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Status</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Action</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Changed By</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Changed At</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Reason</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-slate-200">
+                  {historyData.map((history) => (
+                    <tr key={history.id}>
+                      <td className="px-4 py-2 text-sm">
+                        <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
+                          v{history.version}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-sm">{history.name}</td>
+                      <td className="px-4 py-2 text-sm">{history.costPerHour}</td>
+                      <td className="px-4 py-2 text-sm">{history.currency}</td>
+                      <td className="px-4 py-2 text-sm">
+                        <span className={`px-2 py-1 rounded text-xs ${
+                          history.status === 'Approved' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {history.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-sm">
+                        <span className={`px-2 py-1 rounded text-xs ${
+                          history.action === 'CREATE' ? 'bg-blue-100 text-blue-800' :
+                          history.action === 'UPDATE' ? 'bg-orange-100 text-orange-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {history.action}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-sm">{history.changedBy}</td>
+                      <td className="px-4 py-2 text-sm">
+                        {new Date(history.changedAt).toLocaleString('th-TH')}
+                      </td>
+                      <td className="px-4 py-2 text-sm text-slate-600">{history.changeReason || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
 const StandardPrices: React.FC = () => {
+  const [data, setData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [currentEditItem, setCurrentEditItem] = useState<any>(null);
+  const [historyData, setHistoryData] = useState<any[]>([]);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
   const columns: Column[] = [
-    { 
-      key: 'rmId', 
-      label: 'Raw Material ID', 
+    {
+      key: 'rawMaterialId',
+      label: 'Raw Material',
       required: true,
       endpoint: 'd365-raw-materials',
       displayKey: 'name'
     },
     { key: 'price', label: 'Price', type: 'number', required: true },
-    { 
-      key: 'currency', 
-      label: 'Currency', 
+    {
+      key: 'currency',
+      label: 'Currency',
       required: true,
       endpoint: 'currencies',
-      displayKey: 'name'
-    }
+      displayKey: 'code'
+    },
+    { key: 'changeReason', label: 'Change Reason', type: 'text', required: false }
   ];
 
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await api.get('/api/data/standard-prices');
+      setData(Array.isArray(response.data) ? response.data : []);
+    } catch (err) {
+      setError('Failed to load standard prices');
+      console.error('Load data error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleAdd = () => {
+    setCurrentEditItem(null);
+    setShowModal(true);
+  };
+
+  const handleEdit = (item: any) => {
+    setCurrentEditItem(item);
+    setShowModal(true);
+  };
+
+  const handleViewHistory = async (item: any) => {
+    try {
+      const response = await api.get(`/api/data/standard-prices/history/${item.id}`);
+      setHistoryData(response.data);
+      setShowHistoryModal(true);
+    } catch (err) {
+      console.error('Failed to load history:', err);
+      setError('Failed to load price history');
+    }
+  };
+
+  const handleSave = async (formData: any) => {
+    try {
+      if (currentEditItem) {
+        await api.put(`/api/data/standard-prices/${currentEditItem.id}`, formData);
+        setSuccessMessage('Standard Price updated successfully');
+      } else {
+        await api.post('/api/data/standard-prices', formData);
+        setSuccessMessage('Standard Price created successfully');
+      }
+
+      setShowModal(false);
+      setCurrentEditItem(null);
+      loadData();
+
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      console.error('Save error:', err);
+      setError(err.response?.data?.message || 'Failed to save standard price');
+    }
+  };
+
+  const handleDelete = async (item: any) => {
+    if (!confirm('Are you sure you want to delete this standard price?')) {
+      return;
+    }
+
+    try {
+      await api.delete(`/api/data/standard-prices/${item.id}`);
+      setSuccessMessage('Standard Price deleted successfully');
+      loadData();
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      console.error('Delete error:', err);
+      setError(err.response?.data?.message || 'Failed to delete standard price');
+    }
+  };
+
+  const handleApprove = async (item: any) => {
+    if (!confirm('Are you sure you want to approve this standard price?')) {
+      return;
+    }
+
+    try {
+      await api.put(`/api/data/standard-prices/${item.id}/approve`);
+      setSuccessMessage('Standard Price approved successfully');
+      loadData();
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      console.error('Approve error:', err);
+      setError(err.response?.data?.message || 'Failed to approve standard price');
+    }
+  };
+
+  if (loading) return <LoadingSpinner message="Loading standard prices..." />;
+
   return (
-    <MasterDataTable
-      title="Standard Prices"
-      endpoint="standard-prices"
-      columns={columns}
-    />
+    <div className="space-y-6">
+      {successMessage && (
+        <SuccessMessage
+          message={successMessage}
+          onDismiss={() => setSuccessMessage(null)}
+        />
+      )}
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3 flex-1">
+              <p className="text-sm font-medium text-red-800">{error}</p>
+            </div>
+            <div className="ml-4 flex-shrink-0">
+              <button
+                onClick={() => setError(null)}
+                className="text-red-400 hover:text-red-600"
+              >
+                <span className="sr-only">Dismiss</span>
+                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold text-slate-900">Standard Prices</h2>
+        <button
+          onClick={handleAdd}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Add New
+        </button>
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <table className="min-w-full divide-y divide-slate-200">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Version</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Raw Material</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Price</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Currency</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Status</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-slate-200">
+            {data.map((item) => (
+              <tr key={item.id} className="hover:bg-slate-50">
+                <td className="px-4 py-3 text-sm">
+                  <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
+                    v{item.version || 1}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-sm">{item.rawMaterial?.name || item.rawMaterialId}</td>
+                <td className="px-4 py-3 text-sm">{item.price}</td>
+                <td className="px-4 py-3 text-sm">{item.currency}</td>
+                <td className="px-4 py-3 text-sm">
+                  <span className={`px-2 py-1 rounded text-xs font-medium ${
+                    item.status === 'Approved' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                  }`}>
+                    {item.status}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    {item.status !== 'Approved' && (
+                      <button
+                        onClick={() => handleApprove(item)}
+                        className="text-slate-400 hover:text-green-600 transition-colors"
+                        title="Approve"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleViewHistory(item)}
+                      className="text-slate-400 hover:text-purple-600 transition-colors"
+                      title="View History"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handleEdit(item)}
+                      className="text-slate-400 hover:text-blue-600 transition-colors"
+                      title="Edit"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handleDelete(item)}
+                      className="text-slate-400 hover:text-red-600 transition-colors"
+                      title="Delete"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <EditModal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        onSave={handleSave}
+        title={`${currentEditItem ? 'Edit' : 'Add'} Standard Price`}
+        columns={columns}
+        editingItem={currentEditItem}
+      />
+
+      {showHistoryModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden">
+            <div className="p-6 border-b border-slate-200">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold">Price History</h3>
+                <button
+                  onClick={() => setShowHistoryModal(false)}
+                  className="text-slate-400 hover:text-slate-600"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div className="p-6 overflow-y-auto max-h-[60vh]">
+              <table className="min-w-full divide-y divide-slate-200">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Version</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Price</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Currency</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Status</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Action</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Changed By</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Changed At</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Reason</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-slate-200">
+                  {historyData.map((history) => (
+                    <tr key={history.id}>
+                      <td className="px-4 py-2 text-sm">
+                        <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
+                          v{history.version}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-sm">{history.price}</td>
+                      <td className="px-4 py-2 text-sm">{history.currency}</td>
+                      <td className="px-4 py-2 text-sm">
+                        <span className={`px-2 py-1 rounded text-xs ${
+                          history.status === 'Approved' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {history.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-sm">
+                        <span className={`px-2 py-1 rounded text-xs ${
+                          history.action === 'CREATE' ? 'bg-blue-100 text-blue-800' :
+                          history.action === 'UPDATE' ? 'bg-orange-100 text-orange-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {history.action}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-sm">{history.changedBy}</td>
+                      <td className="px-4 py-2 text-sm">
+                        {new Date(history.changedAt).toLocaleString('th-TH')}
+                      </td>
+                      <td className="px-4 py-2 text-sm text-slate-600">{history.changeReason || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
 const SellingFactors: React.FC = () => {
+  const [data, setData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [currentEditItem, setCurrentEditItem] = useState<any>(null);
+  const [historyData, setHistoryData] = useState<any[]>([]);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
   const columns: Column[] = [
-    { 
-      key: 'pattern', 
-      label: 'FAB Pattern', 
-      required: true,
-      endpoint: 'd365-fab-patterns',
+    { key: 'patternName', label: 'Pattern Name', type: 'text', required: true },
+    { key: 'patternCode', label: 'Pattern Code', type: 'text', required: true },
+    { key: 'factor', label: 'Factor', type: 'number', required: true },
+    {
+      key: 'customerGroupId',
+      label: 'Customer Group',
+      required: false,
+      endpoint: 'customer-groups',
       displayKey: 'name'
     },
-    { key: 'factor', label: 'Factor', type: 'number', required: true }
+    { key: 'description', label: 'Description', type: 'text', required: false },
+    { key: 'changeReason', label: 'Change Reason', type: 'text', required: false }
   ];
 
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await api.get('/api/data/selling-factors');
+      setData(Array.isArray(response.data) ? response.data : []);
+    } catch (err) {
+      setError('Failed to load selling factors');
+      console.error('Load data error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleAdd = () => {
+    setCurrentEditItem(null);
+    setShowModal(true);
+  };
+
+  const handleEdit = (item: any) => {
+    setCurrentEditItem(item);
+    setShowModal(true);
+  };
+
+  const handleViewHistory = async (item: any) => {
+    try {
+      const response = await api.get(`/api/data/selling-factors/history/${item.id}`);
+      setHistoryData(response.data);
+      setShowHistoryModal(true);
+    } catch (err) {
+      console.error('Failed to load history:', err);
+      setError('Failed to load selling factor history');
+    }
+  };
+
+  const handleSave = async (formData: any) => {
+    try {
+      if (currentEditItem) {
+        await api.put(`/api/data/selling-factors/${currentEditItem.id}`, formData);
+        setSuccessMessage('Selling Factor updated successfully');
+      } else {
+        await api.post('/api/data/selling-factors', formData);
+        setSuccessMessage('Selling Factor created successfully');
+      }
+
+      setShowModal(false);
+      setCurrentEditItem(null);
+      loadData();
+
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      console.error('Save error:', err);
+      setError(err.response?.data?.message || 'Failed to save selling factor');
+    }
+  };
+
+  const handleDelete = async (item: any) => {
+    if (!confirm('Are you sure you want to delete this selling factor?')) {
+      return;
+    }
+
+    try {
+      await api.delete(`/api/data/selling-factors/${item.id}`);
+      setSuccessMessage('Selling Factor deleted successfully');
+      loadData();
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      console.error('Delete error:', err);
+      setError(err.response?.data?.message || 'Failed to delete selling factor');
+    }
+  };
+
+  const handleApprove = async (item: any) => {
+    if (!confirm('Are you sure you want to approve this selling factor?')) {
+      return;
+    }
+
+    try {
+      await api.put(`/api/data/selling-factors/${item.id}/approve`);
+      setSuccessMessage('Selling Factor approved successfully');
+      loadData();
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      console.error('Approve error:', err);
+      setError(err.response?.data?.message || 'Failed to approve selling factor');
+    }
+  };
+
+  if (loading) return <LoadingSpinner message="Loading selling factors..." />;
+
   return (
-    <MasterDataTable
-      title="Selling Factors"
-      endpoint="selling-factors"
-      columns={columns}
-    />
+    <div className="space-y-6">
+      {successMessage && (
+        <SuccessMessage
+          message={successMessage}
+          onDismiss={() => setSuccessMessage(null)}
+        />
+      )}
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3 flex-1">
+              <p className="text-sm font-medium text-red-800">{error}</p>
+            </div>
+            <div className="ml-4 flex-shrink-0">
+              <button
+                onClick={() => setError(null)}
+                className="text-red-400 hover:text-red-600"
+              >
+                <span className="sr-only">Dismiss</span>
+                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold text-slate-900">Selling Factors</h2>
+        <button
+          onClick={handleAdd}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Add New
+        </button>
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <table className="min-w-full divide-y divide-slate-200">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Version</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Pattern Name</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Pattern Code</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Factor</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Customer Group</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Status</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-slate-200">
+            {data.map((item) => (
+              <tr key={item.id} className="hover:bg-slate-50">
+                <td className="px-4 py-3 text-sm">
+                  <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
+                    v{item.version || 1}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-sm">{item.patternName}</td>
+                <td className="px-4 py-3 text-sm">{item.patternCode}</td>
+                <td className="px-4 py-3 text-sm">{item.factor}</td>
+                <td className="px-4 py-3 text-sm">{item.customerGroup?.name || 'All Groups'}</td>
+                <td className="px-4 py-3 text-sm">
+                  <span className={`px-2 py-1 rounded text-xs font-medium ${
+                    item.status === 'Approved' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                  }`}>
+                    {item.status}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    {item.status !== 'Approved' && (
+                      <button
+                        onClick={() => handleApprove(item)}
+                        className="text-slate-400 hover:text-green-600 transition-colors"
+                        title="Approve"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleViewHistory(item)}
+                      className="text-slate-400 hover:text-purple-600 transition-colors"
+                      title="View History"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handleEdit(item)}
+                      className="text-slate-400 hover:text-blue-600 transition-colors"
+                      title="Edit"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handleDelete(item)}
+                      className="text-slate-400 hover:text-red-600 transition-colors"
+                      title="Delete"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <EditModal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        onSave={handleSave}
+        title={`${currentEditItem ? 'Edit' : 'Add'} Selling Factor`}
+        columns={columns}
+        editingItem={currentEditItem}
+      />
+
+      {showHistoryModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden">
+            <div className="p-6 border-b border-slate-200">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold">Selling Factor History</h3>
+                <button
+                  onClick={() => setShowHistoryModal(false)}
+                  className="text-slate-400 hover:text-slate-600"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div className="p-6 overflow-y-auto max-h-[60vh]">
+              <table className="min-w-full divide-y divide-slate-200">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Version</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Pattern Name</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Pattern Code</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Factor</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Status</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Action</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Changed By</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Changed At</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Reason</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-slate-200">
+                  {historyData.map((history) => (
+                    <tr key={history.id}>
+                      <td className="px-4 py-2 text-sm">
+                        <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
+                          v{history.version}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-sm">{history.patternName}</td>
+                      <td className="px-4 py-2 text-sm">{history.patternCode}</td>
+                      <td className="px-4 py-2 text-sm">{history.factor}</td>
+                      <td className="px-4 py-2 text-sm">
+                        <span className={`px-2 py-1 rounded text-xs ${
+                          history.status === 'Approved' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {history.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-sm">
+                        <span className={`px-2 py-1 rounded text-xs ${
+                          history.action === 'CREATE' ? 'bg-blue-100 text-blue-800' :
+                          history.action === 'UPDATE' ? 'bg-orange-100 text-orange-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {history.action}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-sm">{history.changedBy}</td>
+                      <td className="px-4 py-2 text-sm">
+                        {new Date(history.changedAt).toLocaleString('th-TH')}
+                      </td>
+                      <td className="px-4 py-2 text-sm text-slate-600">{history.changeReason || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
 const LmePrices: React.FC = () => {
   const columns: Column[] = [
-    { 
-      key: 'customerGroupId', 
-      label: 'Customer Group', 
+    { key: 'itemGroupName', label: 'Item Group Name', type: 'text', required: true },
+    { key: 'itemGroupCode', label: 'Item Group Code', type: 'text', required: true },
+    { key: 'price', label: 'Price', type: 'number', required: true },
+    {
+      key: 'currency',
+      label: 'Currency',
       required: true,
+      endpoint: 'currencies',
+      displayKey: 'code'
+    },
+    {
+      key: 'customerGroupId',
+      label: 'Customer Group',
+      required: false,
       endpoint: 'customer-groups',
       displayKey: 'name'
     },
-    { 
-      key: 'itemGroupCode', 
-      label: 'Item Group Code', 
-      required: true,
-      endpoint: 'd365-item-groups',
-      displayKey: 'name'
-    },
-    { key: 'price', label: 'Price', type: 'number', required: true },
-    { 
-      key: 'currency', 
-      label: 'Currency', 
-      required: true,
-      endpoint: 'currencies',
-      displayKey: 'name'
-    }
+    { key: 'description', label: 'Description', type: 'text', required: false }
   ];
 
   return (
     <MasterDataTable
-      title="LME Prices"
-      endpoint="lme-prices"
+      title="LME Master Data"
+      endpoint="lme-master-data"
       columns={columns}
     />
   );
@@ -883,305 +1813,38 @@ const LmePrices: React.FC = () => {
 
 const ExchangeRates: React.FC = () => {
   const columns: Column[] = [
-    { 
-      key: 'customerGroupId', 
-      label: 'Customer Group', 
-      required: true,
+    { key: 'sourceCurrencyCode', label: 'From Currency Code', type: 'text', required: true },
+    { key: 'sourceCurrencyName', label: 'From Currency Name', type: 'text', required: true },
+    { key: 'destinationCurrencyCode', label: 'To Currency Code', type: 'text', required: true },
+    { key: 'destinationCurrencyName', label: 'To Currency Name', type: 'text', required: true },
+    { key: 'rate', label: 'Exchange Rate', type: 'number', required: true },
+    {
+      key: 'customerGroupId',
+      label: 'Customer Group',
+      required: false,
       endpoint: 'customer-groups',
       displayKey: 'name'
     },
-    { 
-      key: 'sourceCurrency', 
-      label: 'From Currency', 
-      required: true,
-      endpoint: 'currencies',
-      displayKey: 'name'
-    },
-    { 
-      key: 'destinationCurrency', 
-      label: 'To Currency', 
-      required: true,
-      endpoint: 'currencies',
-      displayKey: 'name'
-    },
-    { key: 'rate', label: 'Exchange Rate', type: 'number', required: true }
+    { key: 'description', label: 'Description', type: 'text', required: false }
   ];
 
   return (
     <MasterDataTable
-      title="Exchange Rates"
-      endpoint="exchange-rates"
+      title="Exchange Rate Master Data"
+      endpoint="exchange-rate-master-data"
       columns={columns}
     />
   );
 };
 
-// --- Sync Data Component ---
-const SyncData: React.FC = () => {
-  const [syncStatus, setSyncStatus] = useState<{
-    exchangeRates: { loading: boolean; lastSync: string | null; status: string },
-    lmePrices: { loading: boolean; lastSync: string | null; status: string }
-  }>({
-    exchangeRates: { loading: false, lastSync: null, status: 'ready' },
-    lmePrices: { loading: false, lastSync: null, status: 'ready' }
-  });
-
-  const handleSyncExchangeRates = async () => {
-    setSyncStatus(prev => ({
-      ...prev,
-      exchangeRates: { ...prev.exchangeRates, loading: true, status: 'syncing' }
-    }));
-
-    try {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      setSyncStatus(prev => ({
-        ...prev,
-        exchangeRates: { 
-          loading: false, 
-          lastSync: new Date().toLocaleString(), 
-          status: 'success' 
-        }
-      }));
-      
-      alert('Exchange rates synced successfully!');
-    } catch (error) {
-      setSyncStatus(prev => ({
-        ...prev,
-        exchangeRates: { ...prev.exchangeRates, loading: false, status: 'error' }
-      }));
-      
-      alert('Failed to sync exchange rates');
-    }
-  };
-
-  const handleSyncLmePrices = async () => {
-    setSyncStatus(prev => ({
-      ...prev,
-      lmePrices: { ...prev.lmePrices, loading: true, status: 'syncing' }
-    }));
-
-    try {
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      setSyncStatus(prev => ({
-        ...prev,
-        lmePrices: { 
-          loading: false, 
-          lastSync: new Date().toLocaleString(), 
-          status: 'success' 
-        }
-      }));
-      
-      alert('LME prices synced successfully!');
-    } catch (error) {
-      setSyncStatus(prev => ({
-        ...prev,
-        lmePrices: { ...prev.lmePrices, loading: false, status: 'error' }
-      }));
-      
-      alert('Failed to sync LME prices');
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'syncing': return 'text-yellow-600 bg-yellow-50';
-      case 'success': return 'text-green-600 bg-green-50';
-      case 'error': return 'text-red-600 bg-red-50';
-      default: return 'text-slate-600 bg-slate-50';
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'syncing': return 'Syncing...';
-      case 'success': return 'Synced';
-      case 'error': return 'Failed';
-      default: return 'Ready';
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-slate-900">Data Synchronization</h2>
-        <p className="text-sm text-slate-600">Sync external data sources with your system</p>
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-2">
-        <div className="bg-white border border-slate-200 rounded-lg p-6">
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <h3 className="text-lg font-medium text-slate-900 mb-2">Exchange Rates</h3>
-              <p className="text-sm text-slate-600 mb-4">
-                Sync latest exchange rates from external financial data providers
-              </p>
-            </div>
-            <div className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(syncStatus.exchangeRates.status)}`}>
-              {getStatusText(syncStatus.exchangeRates.status)}
-            </div>
-          </div>
-
-          {syncStatus.exchangeRates.lastSync && (
-            <div className="text-sm text-slate-500 mb-4">
-              Last sync: {syncStatus.exchangeRates.lastSync}
-            </div>
-          )}
-
-          <div className="space-y-3">
-            <div className="text-sm">
-              <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                <span className="font-medium">Data Sources:</span>
-              </div>
-              <ul className="mt-2 text-slate-600 space-y-1">
-                <li>• Bank of Thailand (BOT)</li>
-                <li>• European Central Bank (ECB)</li>
-                <li>• Federal Reserve (Fed)</li>
-              </ul>
-            </div>
-
-            <button
-              onClick={handleSyncExchangeRates}
-              disabled={syncStatus.exchangeRates.loading}
-              className={`w-full px-4 py-2 rounded-lg font-medium transition-colors ${
-                syncStatus.exchangeRates.loading
-                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
-              }`}
-            >
-              {syncStatus.exchangeRates.loading ? (
-                <div className="flex items-center justify-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-slate-400"></div>
-                  Syncing Exchange Rates...
-                </div>
-              ) : (
-                'Sync Exchange Rates Now'
-              )}
-            </button>
-          </div>
-        </div>
-
-        <div className="bg-white border border-slate-200 rounded-lg p-6">
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <h3 className="text-lg font-medium text-slate-900 mb-2">LME Prices</h3>
-              <p className="text-sm text-slate-600 mb-4">
-                Sync latest metal prices from London Metal Exchange
-              </p>
-            </div>
-            <div className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(syncStatus.lmePrices.status)}`}>
-              {getStatusText(syncStatus.lmePrices.status)}
-            </div>
-          </div>
-
-          {syncStatus.lmePrices.lastSync && (
-            <div className="text-sm text-slate-500 mb-4">
-              Last sync: {syncStatus.lmePrices.lastSync}
-            </div>
-          )}
-
-          <div className="space-y-3">
-            <div className="text-sm">
-              <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                <span className="font-medium">Metal Types:</span>
-              </div>
-              <ul className="mt-2 text-slate-600 space-y-1">
-                <li>• Aluminum (AL)</li>
-                <li>• Copper (CU)</li>
-                <li>• Steel (ST)</li>
-                <li>• Nickel (NI)</li>
-              </ul>
-            </div>
-
-            <button
-              onClick={handleSyncLmePrices}
-              disabled={syncStatus.lmePrices.loading}
-              className={`w-full px-4 py-2 rounded-lg font-medium transition-colors ${
-                syncStatus.lmePrices.loading
-                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                  : 'bg-emerald-600 text-white hover:bg-emerald-700'
-              }`}
-            >
-              {syncStatus.lmePrices.loading ? (
-                <div className="flex items-center justify-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-slate-400"></div>
-                  Syncing LME Prices...
-                </div>
-              ) : (
-                'Sync LME Prices Now'
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white border border-slate-200 rounded-lg p-6">
-        <h3 className="text-lg font-medium text-slate-900 mb-4">Sync History</h3>
-        <div className="space-y-3 text-sm">
-          <div className="flex justify-between items-center py-2 border-b border-slate-100">
-            <span className="font-medium text-slate-900">Data Type</span>
-            <span className="font-medium text-slate-900">Last Sync</span>
-            <span className="font-medium text-slate-900">Status</span>
-          </div>
-          
-          <div className="flex justify-between items-center py-2">
-            <span className="text-slate-600">Exchange Rates</span>
-            <span className="text-slate-500">
-              {syncStatus.exchangeRates.lastSync || 'Never'}
-            </span>
-            <div className={`px-2 py-1 rounded text-xs ${getStatusColor(syncStatus.exchangeRates.status)}`}>
-              {getStatusText(syncStatus.exchangeRates.status)}
-            </div>
-          </div>
-          
-          <div className="flex justify-between items-center py-2">
-            <span className="text-slate-600">LME Prices</span>
-            <span className="text-slate-500">
-              {syncStatus.lmePrices.lastSync || 'Never'}
-            </span>
-            <div className={`px-2 py-1 rounded text-xs ${getStatusColor(syncStatus.lmePrices.status)}`}>
-              {getStatusText(syncStatus.lmePrices.status)}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white border border-slate-200 rounded-lg p-6">
-        <h3 className="text-lg font-medium text-slate-900 mb-4">Auto Sync Settings</h3>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <label className="text-sm font-medium text-slate-900">Exchange Rates Auto Sync</label>
-              <p className="text-xs text-slate-600">Automatically sync every day at 9:00 AM</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" className="sr-only peer" defaultChecked />
-              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-          
-          <div className="flex items-center justify-between">
-            <div>
-              <label className="text-sm font-medium text-slate-900">LME Prices Auto Sync</label>
-              <p className="text-xs text-slate-600">Automatically sync every day at 10:00 AM</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" className="sr-only peer" defaultChecked />
-              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
-            </label>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 // --- Main MasterData Component ---
 const MasterData: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('currencies');
+  const [activeTab, setActiveTab] = useState('import');
 
   const tabs = [
+    { id: 'import', label: '📥 Import Data', component: ImportManager },
+    { id: 'viewData', label: '📊 View Data', component: MasterDataViewer },
     { id: 'currencies', label: 'Currencies', component: Currencies },
     { id: 'customerGroups', label: 'Customer Groups', component: CustomerGroups },
     { id: 'customerMappings', label: 'Customer Mappings', component: CustomerMappings },
@@ -1190,7 +1853,7 @@ const MasterData: React.FC = () => {
     { id: 'sellingFactors', label: 'Selling Factors', component: SellingFactors },
     { id: 'lmePrices', label: 'LME Prices', component: LmePrices },
     { id: 'exchangeRates', label: 'Exchange Rates', component: ExchangeRates },
-    { id: 'syncData', label: 'Sync Data', component: SyncData },
+    { id: 'activityLogs', label: 'Activity Logs', component: () => <ActivityLogs title="Activity Logs ทั้งหมด" /> },
   ];
 
   const renderContent = () => {

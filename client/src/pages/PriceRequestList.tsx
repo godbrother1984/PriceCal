@@ -1,13 +1,14 @@
 // path: client/src/pages/PriceRequestList.tsx
-// version: 2.5 (Fixed Display for New Customers/Products)
-// last-modified: 1 กันยายน 2568
+// version: 2.6 (Auto-refresh Status Updates)
+// last-modified: 23 กันยายน 2568 15:45
 
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import eventBus, { EVENTS } from '../services/eventBus';
 
 // --- API Configuration ---
 const api = axios.create({
-  baseURL: 'http://localhost:3000',
+  baseURL: 'http://localhost:3001',
   timeout: 10000,
 });
 
@@ -31,7 +32,7 @@ interface PriceRequest {
   id: string;
   customerName: string;
   productName: string;
-  status: 'Pending' | 'Approved' | 'Rejected';
+  status: 'Draft' | 'Pending' | 'Calculating' | 'Pending Approval' | 'Approved' | 'Rejected';
   createdBy: string;
   createdAt: string;
   costingBy?: string;
@@ -136,7 +137,7 @@ const PriceRequestList: React.FC<PriceRequestListProps> = ({ onNavigate, onEdit,
     setLoading(true);
     setError('');
     try {
-      const response = await api.get('/mock-data/requests');
+      const response = await api.get('/api/data/requests');
 
       console.log('[PriceRequestList] API Response:', response.data);
 
@@ -166,6 +167,26 @@ const PriceRequestList: React.FC<PriceRequestListProps> = ({ onNavigate, onEdit,
     fetchRequests();
   }, [fetchRequests, version]);
 
+  // Listen to cross-component events
+  useEffect(() => {
+    const unsubscribe = eventBus.on(EVENTS.REQUEST_STATUS_UPDATED, (data) => {
+      console.log('[PriceRequestList] Received status update event:', data);
+      fetchRequests();
+    });
+
+    return unsubscribe;
+  }, [fetchRequests]);
+
+  // Auto-refresh เพื่ออัพเดท status ที่อาจถูกเปลี่ยนจากหน้าอื่น (ลดความถี่ลงเพราะมี event bus แล้ว)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      console.log('[PriceRequestList] Auto-refreshing data...');
+      fetchRequests();
+    }, 30000); // รีเฟรชทุก 30 วินาที
+
+    return () => clearInterval(interval);
+  }, [fetchRequests]);
+
   // Safe filtering with array validation
   const filteredRequests = Array.isArray(requests) 
     ? requests.filter(req => filter === 'All' || req.status === filter)
@@ -174,13 +195,20 @@ const PriceRequestList: React.FC<PriceRequestListProps> = ({ onNavigate, onEdit,
   const getStatusBadge = (status: string) => {
     const baseClasses = 'px-3 py-1 rounded-full text-xs font-medium';
     switch (status) {
-      case 'Approved':
-        return <span className={`${baseClasses} bg-green-100 text-green-800`}>Approved</span>;
-      case 'Rejected':
-        return <span className={`${baseClasses} bg-red-100 text-red-800`}>Rejected</span>;
+      case 'Draft':
+        return <span className={`${baseClasses} bg-gray-100 text-gray-800`}>แบบร่าง</span>;
       case 'Pending':
+        return <span className={`${baseClasses} bg-yellow-100 text-yellow-800`}>รอตรวจสอบ</span>;
+      case 'Calculating':
+        return <span className={`${baseClasses} bg-blue-100 text-blue-800`}>กำลังคำนวณ</span>;
+      case 'Pending Approval':
+        return <span className={`${baseClasses} bg-orange-100 text-orange-800`}>รออนุมัติ</span>;
+      case 'Approved':
+        return <span className={`${baseClasses} bg-green-100 text-green-800`}>อนุมัติแล้ว</span>;
+      case 'Rejected':
+        return <span className={`${baseClasses} bg-red-100 text-red-800`}>ปฏิเสธ</span>;
       default:
-        return <span className={`${baseClasses} bg-yellow-100 text-yellow-800`}>Pending</span>;
+        return <span className={`${baseClasses} bg-gray-100 text-gray-800`}>{status}</span>;
     }
   };
 
@@ -222,7 +250,7 @@ const PriceRequestList: React.FC<PriceRequestListProps> = ({ onNavigate, onEdit,
     setContextMenu(null);
   };
 
-  const tabs = ['All', 'Pending', 'Approved', 'Rejected'];
+  const tabs = ['All', 'Draft', 'Pending', 'Calculating', 'Pending Approval', 'Approved', 'Rejected'];
 
   return (
     <div className="space-y-6">

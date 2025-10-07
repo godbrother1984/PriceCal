@@ -1,8 +1,10 @@
 // path: client/src/pages/CreateRequest.tsx
-// version: 2.7 (Correct Workflow Implementation)
-// last-modified: 31 สิงหาคม 2568
+// version: 3.6 (Add Readonly Mode for Submitted Requests)
+// last-modified: 26 กันยายน 2568 00:20
 
 import React, { useState, useEffect } from 'react';
+import eventBus, { EVENTS } from '../services/eventBus';
+import ApprovalWorkflow from '../components/ApprovalWorkflow';
 
 // --- Interfaces ---
 interface CreateRequestProps {
@@ -30,12 +32,14 @@ interface BoqItem {
   quantity: number;
 }
 
-interface CalculationResult {
-  basePrice: string; 
-  sellingFactor: number; 
-  finalPrice: string; 
-  currency: string;
+interface SpecialRequest {
+  id: number;
+  description: string;
+  category: string;
+  estimatedCost?: number;
 }
+
+// ลบ CalculationResult interface - ไม่ต้องใช้สำหรับ Sales user
 
 interface Customer {
   id: string; 
@@ -47,18 +51,20 @@ interface Product {
   name: string;
 }
 
-interface RawMaterial {
-  id: string;
-  name: string;
-  unit: string;
-}
+// interface RawMaterial {
+//   id: string;
+//   name: string;
+//   unit: string;
+// }
 
 interface RequestData {
   formData: FormData;
   customerType: 'existing' | 'new';
   productType: 'existing' | 'new';
   boqItems: BoqItem[];
-  calculationResult: CalculationResult | null;
+  specialRequests: SpecialRequest[];
+  status?: 'Draft' | 'Pending' | 'Calculating' | 'Pending Approval' | 'Approved' | 'Rejected';
+  // ลบ calculationResult - Sales user ไม่ต้องใช้
 }
 
 // --- Main Component ---
@@ -68,21 +74,25 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
   const [formData, setFormData] = useState<FormData>({});
   
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
-  const [selectedRm, setSelectedRm] = useState<RawMaterial | null>(null);
-  const [rmSearch, setRmSearch] = useState('');
-  const [tempQty, setTempQty] = useState(1);
+  const [specialRequests, setSpecialRequests] = useState<SpecialRequest[]>([]);
+  const [newSpecialRequest, setNewSpecialRequest] = useState({ description: '', category: '' });
+  // ลบ state variables สำหรับการแก้ไข BOQ - Sales user ไม่สามารถแก้ไขได้
 
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingBOM, setIsFetchingBOM] = useState(false);
   const [error, setError] = useState('');
-  const [calculationResult, setCalculationResult] = useState<CalculationResult | null>(null);
+  const [requestStatus, setRequestStatus] = useState<'Draft' | 'Pending' | 'Calculating' | 'Pending Approval' | 'Approved' | 'Rejected'>('Draft');
+  // ลบ calculationResult state - ไม่ต้องใช้สำหรับ Sales user
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
+  // ลบ rawMaterials state - Sales user ไม่ต้องเลือก raw materials
   
   const [customerSearch, setCustomerSearch] = useState('');
   const [productSearch, setProductSearch] = useState('');
+
+  // Determine if form should be readonly (only when approved or rejected)
+  const isReadonly = requestStatus === 'Approved' || requestStatus === 'Rejected';
 
   // Helper function to extract array data from API response
   const extractApiArrayData = (response: any): any[] => {
@@ -118,21 +128,19 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
   useEffect(() => {
     const fetchAllMasterData = async () => {
       try {
-        const [custRes, prodRes, rmRes] = await Promise.all([
-          fetch('http://localhost:3000/api/data/customers'),
-          fetch('http://localhost:3000/api/data/products'),
-          fetch('http://localhost:3000/api/data/raw-materials')
+        const [custRes, prodRes] = await Promise.all([
+          fetch('http://localhost:3001/api/data/customers'),
+          fetch('http://localhost:3001/api/data/products')
+          // ลบการโหลด raw-materials - Sales user ไม่ต้องใช้
         ]);
-        
-        const [custData, prodData, rmData] = await Promise.all([
+
+        const [custData, prodData] = await Promise.all([
           custRes.json(),
-          prodRes.json(),
-          rmRes.json()
+          prodRes.json()
         ]);
 
         setCustomers(extractApiArrayData(custData) as Customer[]);
         setProducts(extractApiArrayData(prodData) as Product[]);
-        setRawMaterials(extractApiArrayData(rmData) as RawMaterial[]);
 
         console.log('[CreateRequest] Master data loaded');
 
@@ -150,7 +158,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
     if (requestId) {
       const loadRequestData = async () => {
         try {
-          const response = await fetch(`http://localhost:3000/api/data/requests/${requestId}`);
+          const response = await fetch(`http://localhost:3001/api/data/requests/${requestId}`);
           const responseData = await response.json();
           const requestData = extractSingleApiData(responseData) as RequestData;
 
@@ -159,7 +167,10 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
             setCustomerType(requestData.customerType || 'existing');
             setProductType(requestData.productType || 'existing');
             setBoqItems(requestData.boqItems || []);
-            setCalculationResult(requestData.calculationResult || null);
+            setSpecialRequests(requestData.specialRequests || []);
+            setRequestStatus(requestData.status || 'Draft');
+            console.log('[CreateRequest] Loaded request status:', requestData.status);
+            // ลบ setCalculationResult - ไม่ต้องใช้สำหรับ Sales user
 
             // Set search values
             if (requestData.formData?.customerName) {
@@ -178,6 +189,20 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
     }
   }, [requestId]);
 
+  // Listen to status update events
+  useEffect(() => {
+    if (requestId) {
+      const unsubscribe = eventBus.on(EVENTS.REQUEST_STATUS_UPDATED, (data) => {
+        if (data.requestId === requestId) {
+          console.log('[CreateRequest] Received status update for current request:', data);
+          setRequestStatus(data.status);
+        }
+      });
+
+      return unsubscribe;
+    }
+  }, [requestId]);
+
   const handleFormChange = (field: keyof FormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
@@ -186,7 +211,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
   const fetchBOMForProduct = async (productId: string) => {
     setIsFetchingBOM(true);
     try {
-      const response = await fetch(`http://localhost:3000/api/data/bom/product/${productId}`);
+      const response = await fetch(`http://localhost:3001/api/data/bom/product/${productId}`);
       if (response.ok) {
         const bomData = await response.json();
         const bomItems = extractApiArrayData(bomData) as any[];
@@ -232,82 +257,37 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
     }
   };
 
-  const handleAddToBoq = () => {
-    if (!selectedRm || tempQty <= 0) return;
-    
-    const existingIndex = boqItems.findIndex(item => item.rmId === selectedRm.id);
-    if (existingIndex !== -1) {
-      // Update existing item quantity
-      setBoqItems(prev => prev.map((item, index) => 
-        index === existingIndex ? 
-          { ...item, quantity: item.quantity + tempQty } : 
-          item
-      ));
-    } else {
-      // Add new item
-      const newItem: BoqItem = {
-        id: Date.now(),
-        rmId: selectedRm.id,
-        rmName: selectedRm.name,
-        rmUnit: selectedRm.unit,
-        quantity: tempQty
-      };
-      setBoqItems(prev => [...prev, newItem]);
+  // ลบฟังก์ชัน handleAddToBoq - Sales user ไม่สามารถแก้ไข BOQ ได้
+
+  // ลบฟังก์ชัน handleUpdateBoqQuantity - Sales user ไม่สามารถแก้ไข BOQ ได้
+
+  // ลบฟังก์ชัน handleRemoveFromBoq - Sales user ไม่สามารถแก้ไข BOQ ได้
+
+  // ลบ handleCalculatePrice function - ไม่ต้องใช้สำหรับ Sales user
+
+  // Special Requests Management
+  const handleAddSpecialRequest = () => {
+    if (!newSpecialRequest.description.trim() || !newSpecialRequest.category.trim()) {
+      alert('กรุณากรอกรายละเอียดและประเภทคำขอพิเศษ');
+      return;
     }
-    
-    // Reset selection
-    setSelectedRm(null);
-    setRmSearch('');
-    setTempQty(1);
+
+    const specialRequest: SpecialRequest = {
+      id: Date.now(),
+      description: newSpecialRequest.description.trim(),
+      category: newSpecialRequest.category.trim()
+    };
+
+    setSpecialRequests(prev => [...prev, specialRequest]);
+    setNewSpecialRequest({ description: '', category: '' });
   };
 
-  const handleUpdateBoqQuantity = (id: number, newQuantity: number) => {
-    if (newQuantity <= 0) {
-      handleRemoveFromBoq(id);
-    } else {
-      setBoqItems(prev => prev.map(item => 
-        item.id === id ? { ...item, quantity: newQuantity } : item
-      ));
-    }
+  const handleRemoveSpecialRequest = (id: number) => {
+    setSpecialRequests(prev => prev.filter(req => req.id !== id));
   };
 
-  const handleRemoveFromBoq = (itemId: number) => {
-    setBoqItems(prev => prev.filter(item => item.id !== itemId));
-  };
-
-  const handleCalculatePrice = async () => {
-    setIsLoading(true);
-    setError('');
-
-    try {
-      const calculationData = {
-        formData,
-        customerType,
-        productType,
-        boqItems,
-      };
-
-      const response = await fetch('http://localhost:3000/pricing/calculate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(calculationData)
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        setCalculationResult(extractSingleApiData(result) as CalculationResult || null);
-      } else {
-        throw new Error('Failed to calculate price');
-      }
-    } catch (err) {
-      setError('ไม่สามารถคำนวณราคาได้ กรุณาลองใหม่อีกครั้ง');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleCreateOrUpdateRequest = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // บันทึกเป็น Draft
+  const handleSaveDraft = async () => {
     setIsLoading(true);
     setError('');
 
@@ -317,12 +297,13 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
         customerType,
         productType,
         boqItems,
-        calculationResult,
+        specialRequests,
+        status: 'Draft'
       };
 
       const url = requestId
-        ? `http://localhost:3000/api/data/requests/${requestId}`
-        : 'http://localhost:3000/api/data/requests';
+        ? `http://localhost:3001/api/data/requests/${requestId}`
+        : 'http://localhost:3001/api/data/requests';
       const method = requestId ? 'PUT' : 'POST';
 
       const response = await fetch(url, {
@@ -332,7 +313,9 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
       });
 
       if (response.ok) {
-        onSuccess();
+        setRequestStatus('Draft');
+        alert('บันทึกเป็น Draft เรียบร้อยแล้ว');
+        if (!requestId) onSuccess(); // ถ้าเป็นการสร้างใหม่ให้กลับไปหน้า list
       } else {
         throw new Error('Failed to save request');
       }
@@ -341,6 +324,51 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // ส่งคำขอ (เปลี่ยนเป็น Pending)
+  const handleSubmitRequest = async () => {
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const requestData: RequestData = {
+        formData,
+        customerType,
+        productType,
+        boqItems,
+        specialRequests,
+        status: 'Pending'
+      };
+
+      const url = requestId
+        ? `http://localhost:3001/api/data/requests/${requestId}`
+        : 'http://localhost:3001/api/data/requests';
+      const method = requestId ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestData)
+      });
+
+      if (response.ok) {
+        setRequestStatus('Pending');
+        alert('ส่งคำขอราคาเรียบร้อยแล้ว');
+        onSuccess();
+      } else {
+        throw new Error('Failed to submit request');
+      }
+    } catch (err) {
+      setError('ไม่สามารถส่งคำขอได้');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCreateOrUpdateRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    // ป้องกันการ submit form โดยตรง - ให้ใช้ปุ่มแทน
   };
 
   // Safe filtering with proper search logic (ID and Name)
@@ -360,13 +388,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
       })
     : [];
 
-  const filteredRawMaterials = rmSearch && Array.isArray(rawMaterials)
-    ? rawMaterials.filter(rm => {
-        const searchLower = rmSearch.toLowerCase();
-        return (rm.name && rm.name.toLowerCase().includes(searchLower)) ||
-               (rm.id && rm.id.toLowerCase().includes(searchLower));
-      })
-    : [];
+  // ลบ filteredRawMaterials - Sales user ไม่ต้องเลือก raw materials
 
   // Reset BOQ when product type changes
   useEffect(() => {
@@ -380,13 +402,28 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 mb-2">
-            {requestId ? `Edit Price Request #${requestId}` : 'สร้างคำขอราคาใหม่'}
+            {requestId ? (isReadonly ? `ดูข้อมูลคำขอราคา #${requestId}` : `แก้ไขคำขอราคา #${requestId}`) : 'สร้างคำขอราคาใหม่'}
           </h1>
           <p className="text-slate-500">
-            {requestId ? 'แก้ไขรายละเอียดและคำนวณราคา' : 'กรอกข้อมูลเพื่อสร้างรายการให้ทีม Costing ทำงานต่อ'}
+            {isReadonly ? 'ข้อมูลคำขอราคาที่ได้ส่งแล้ว (ไม่สามารถแก้ไขได้)' : (requestId ? 'แก้ไขรายละเอียดคำขอราคา' : 'กรอกข้อมูลพื้นฐานเพื่อส่งให้ทีม Costing ประเมินราคา')}
           </p>
         </div>
       </div>
+
+      {/* Readonly Warning Banner */}
+      {isReadonly && (
+        <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+          <div className="flex items-center">
+            <svg className="w-5 h-5 mr-3 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+            <div>
+              <div className="font-medium text-orange-800">เอกสารนี้ได้ส่งแล้ว</div>
+              <div className="text-sm text-orange-700">สถานะ: {requestStatus} - ไม่สามารถแก้ไขข้อมูลได้แล้ว</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
@@ -394,10 +431,21 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
         </div>
       )}
 
-      <div className="space-y-8">
-        {/* Customer Info */}
-        <div className="bg-white p-6 sm:p-8 rounded-xl border border-slate-200 shadow-sm">
-          <h2 className="text-xl font-semibold mb-6 text-slate-800">1. ข้อมูลลูกค้า</h2>
+      <div className="max-w-7xl mx-auto">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+          {/* Left Column - Main Information */}
+          <div className="space-y-6">
+            {/* Customer Info Card */}
+            <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
+              <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 rounded-t-lg">
+                <h2 className="text-lg font-semibold text-slate-800 flex items-center">
+                  <svg className="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  ข้อมูลลูกค้า
+                </h2>
+              </div>
+              <div className="p-6">
 
           {/* Customer Type Selection */}
           <div className="mb-6">
@@ -410,7 +458,8 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                   value="existing"
                   checked={customerType === 'existing'}
                   onChange={(e) => setCustomerType(e.target.value as 'existing' | 'new')}
-                  className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500"
+                  disabled={isReadonly}
+                  className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500 disabled:opacity-50"
                 />
                 <span className="ml-2 text-sm font-medium text-slate-700">ลูกค้าเดิม</span>
               </label>
@@ -421,7 +470,8 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                   value="new"
                   checked={customerType === 'new'}
                   onChange={(e) => setCustomerType(e.target.value as 'existing' | 'new')}
-                  className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500"
+                  disabled={isReadonly}
+                  className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500 disabled:opacity-50"
                 />
                 <span className="ml-2 text-sm font-medium text-slate-700">ลูกค้าใหม่</span>
               </label>
@@ -445,7 +495,8 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                   }
                 }}
                 placeholder="ค้นหาด้วย Customer ID หรือชื่อลูกค้า..."
-                className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-slate-50"
+                disabled={isReadonly}
+                className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 autoComplete="off"
               />
               
@@ -486,7 +537,8 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                   value={formData.newCustomerName || ''}
                   onChange={(e) => handleFormChange('newCustomerName', e.target.value)}
                   placeholder="ชื่อบริษัท/ลูกค้า"
-                  className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  disabled={isReadonly}
+                  className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
                   required
                 />
               </div>
@@ -499,16 +551,26 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                   value={formData.newCustomerContact || ''}
                   onChange={(e) => handleFormChange('newCustomerContact', e.target.value)}
                   placeholder="เบอร์โทร/อีเมล"
-                  className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  disabled={isReadonly}
+                  className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
                 />
               </div>
             </div>
           )}
-        </div>
+              </div>
+            </div>
 
-        {/* Product Info */}
-        <div className="bg-white p-6 sm:p-8 rounded-xl border border-slate-200 shadow-sm">
-          <h2 className="text-xl font-semibold mb-6 text-slate-800">2. ข้อมูลสินค้า</h2>
+            {/* Product Info Card */}
+            <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
+              <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 rounded-t-lg">
+                <h2 className="text-lg font-semibold text-slate-800 flex items-center">
+                  <svg className="w-5 h-5 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                  </svg>
+                  ข้อมูลสินค้า
+                </h2>
+              </div>
+              <div className="p-6">
 
           {/* Product Type Selection */}
           <div className="mb-6">
@@ -521,7 +583,8 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                   value="existing"
                   checked={productType === 'existing'}
                   onChange={(e) => setProductType(e.target.value as 'existing' | 'new')}
-                  className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500"
+                  disabled={isReadonly}
+                  className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500 disabled:opacity-50"
                 />
                 <span className="ml-2 text-sm font-medium text-slate-700">สินค้าเดิม (ดึง BOM อัตโนมัติ)</span>
               </label>
@@ -532,7 +595,8 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                   value="new"
                   checked={productType === 'new'}
                   onChange={(e) => setProductType(e.target.value as 'existing' | 'new')}
-                  className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500"
+                  disabled={isReadonly}
+                  className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500 disabled:opacity-50"
                 />
                 <span className="ml-2 text-sm font-medium text-slate-700">สินค้าใหม่ (สร้าง BOQ ชั่วคราว)</span>
               </label>
@@ -556,7 +620,8 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                   }
                 }}
                 placeholder="ค้นหาด้วย FG Code หรือชื่อสินค้า..."
-                className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-slate-50"
+                disabled={isReadonly}
+                className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 autoComplete="off"
               />
               
@@ -598,7 +663,8 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                   value={formData.newProductName || ''}
                   onChange={(e) => handleFormChange('newProductName', e.target.value)}
                   placeholder="ชื่อสินค้าใหม่"
-                  className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  disabled={isReadonly}
+                  className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
                   required
                 />
               </div>
@@ -611,21 +677,36 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                   value={formData.newProductDrawing || ''}
                   onChange={(e) => handleFormChange('newProductDrawing', e.target.value)}
                   placeholder="เลขที่แบบ"
-                  className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  disabled={isReadonly}
+                  className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
                 />
               </div>
             </div>
           )}
-        </div>
+              </div>
+            </div>
+          </div>
 
-        {/* BOQ Section */}
-        <div className="bg-white p-6 sm:p-8 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold text-slate-800">
-              3. รายการวัตถุดิบ (BOQ)
-              {productType === 'existing' && ' - จาก BOM ในระบบ'}
-              {productType === 'new' && ' - BOQ ชั่วคราว'}
-            </h2>
+          {/* Right Column - BOQ and Special Requests */}
+          <div className="space-y-6">
+            {/* BOQ Section Card */}
+            <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
+              <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 rounded-t-lg">
+                <h2 className="text-lg font-semibold text-slate-800 flex items-center">
+                  <svg className="w-5 h-5 mr-2 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                  </svg>
+                  รายการวัตถุดิบ (BOQ)
+                  {productType === 'existing' && (
+                    <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">จาก BOM ในระบบ</span>
+                  )}
+                  {productType === 'new' && (
+                    <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full">BOQ ชั่วคราว</span>
+                  )}
+                </h2>
+              </div>
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
             
             {/* Auto-fetch BOM status for existing products */}
             {productType === 'existing' && formData.productId && (
@@ -644,90 +725,19 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
               </div>
             )}
           </div>
+          </div>
 
-          {/* Add Raw Material (Only for new products or manual BOQ editing) */}
-          {(productType === 'new' || (productType === 'existing' && !isFetchingBOM)) && (
-            <div className="mb-6 p-4 bg-slate-50 rounded-lg">
-              <h3 className="text-lg font-medium mb-4 text-slate-700">
-                {productType === 'new' ? 'สร้าง BOQ ชั่วคราว' : 'แก้ไข BOQ (เพิ่มเติม)'}
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="md:col-span-1">
-                  <label className="block text-sm font-medium text-slate-700 mb-2">ค้นหาวัตถุดิบ</label>
-                  <div className="relative">
-                    <input 
-                      type="text"
-                      value={rmSearch}
-                      onChange={(e) => {
-                        setRmSearch(e.target.value);
-                        setSelectedRm(null);
-                      }}
-                      placeholder="ค้นหาด้วย RM Code หรือชื่อวัตถุดิบ..."
-                      className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                      autoComplete="off"
-                    />
-                    
-                    {/* Raw Material Search Results */}
-                    {rmSearch && filteredRawMaterials.length > 0 && !selectedRm && (
-                      <div className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                        {filteredRawMaterials.map(rm => (
-                          <button
-                            key={rm.id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedRm(rm);
-                              setRmSearch(rm.name);
-                            }}
-                            className="w-full p-3 text-left hover:bg-blue-50 border-b border-slate-100 last:border-b-0 transition-colors"
-                          >
-                            <div className="font-medium text-slate-900">{rm.name}</div>
-                            <div className="text-sm text-slate-500">{rm.id} • หน่วย: {rm.unit}</div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">จำนวน</label>
-                  <input 
-                    type="number"
-                    value={tempQty}
-                    onChange={(e) => setTempQty(parseFloat(e.target.value) || 1)}
-                    min="0.01"
-                    step="0.01"
-                    className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="1.00"
-                  />
-                </div>
-                
-                <div className="flex items-end">
-                  <button
-                    type="button"
-                    onClick={handleAddToBoq}
-                    disabled={!selectedRm || tempQty <= 0}
-                    className="w-full px-4 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    เพิ่มในรายการ
-                  </button>
-                </div>
-              </div>
-              
-              {/* Selected Raw Material Display */}
-              {selectedRm && (
-                <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                  <div className="text-sm text-blue-800">
-                    <strong>เลือกแล้ว:</strong> {selectedRm.name} ({selectedRm.id}) - หน่วย: {selectedRm.unit}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+          {/* ลบส่วน BOQ editing สำหรับ Sales user - ไม่จำเป็นต้องใช้ */}
 
-          {/* BOQ Table */}
+          {/* BOQ Table - Read Only for Sales */}
           {boqItems.length > 0 && (
             <div className="overflow-x-auto">
+              <div className="mb-3 text-sm text-slate-600 bg-slate-50 p-3 rounded-lg">
+                <svg className="inline w-4 h-4 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                รายการวัตถุดิบจาก BOM ในระบบ (ทีม Costing จะตรวจสอบและปรับปรุง)
+              </div>
               <table className="w-full text-sm text-left">
                 <thead className="text-xs text-slate-700 uppercase bg-slate-50">
                   <tr>
@@ -735,45 +745,23 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                     <th className="px-4 py-3">ชื่อวัตถุดิบ</th>
                     <th className="px-4 py-3">จำนวน</th>
                     <th className="px-4 py-3">หน่วย</th>
-                    <th className="px-4 py-3 text-center">จัดการ</th>
+                    <th className="px-4 py-3 text-center">แหล่งข้อมูล</th>
                   </tr>
                 </thead>
                 <tbody>
                   {boqItems.map(item => (
-                    <tr key={item.id} className="bg-white border-b hover:bg-slate-50">
+                    <tr key={item.id} className="bg-white border-b">
                       <td className="px-4 py-3 font-medium text-slate-900">{item.rmId}</td>
                       <td className="px-4 py-3">{item.rmName}</td>
-                      <td className="px-4 py-3">
-                        {productType === 'new' ? (
-                          <input
-                            type="number"
-                            value={item.quantity}
-                            onChange={(e) => handleUpdateBoqQuantity(item.id, parseFloat(e.target.value) || 0)}
-                            min="0.01"
-                            step="0.01"
-                            className="w-20 p-1 border border-slate-300 rounded text-center focus:ring-1 focus:ring-blue-500"
-                          />
-                        ) : (
-                          item.quantity
-                        )}
-                      </td>
+                      <td className="px-4 py-3 font-medium">{item.quantity}</td>
                       <td className="px-4 py-3">{item.rmUnit}</td>
                       <td className="px-4 py-3 text-center">
-                        {productType === 'new' && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveFromBoq(item.id)}
-                            className="text-red-600 hover:text-red-800 font-medium transition-colors"
-                            title="ลบรายการนี้"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        )}
-                        {productType === 'existing' && (
-                          <span className="text-slate-400 text-xs">จากระบบ</span>
-                        )}
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          จาก BOM
+                        </span>
                       </td>
                     </tr>
                   ))}
@@ -788,8 +776,8 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
               <svg className="mx-auto h-12 w-12 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
-              <h3 className="mt-2 text-sm font-medium text-slate-900">สร้าง BOQ ชั่วคราวสำหรับสินค้าใหม่</h3>
-              <p className="mt-1 text-sm text-slate-500">เพิ่มรายการวัตถุดิบเพื่อเริ่มคำนวณราคา</p>
+              <h3 className="mt-2 text-sm font-medium text-slate-900">สินค้าใหม่ยังไม่มี BOQ</h3>
+              <p className="mt-1 text-sm text-slate-500">ทีม Costing จะสร้าง BOQ และคำนวณราคาให้หลังจากรับคำขอ</p>
             </div>
           )}
 
@@ -799,79 +787,128 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.864-.833-2.634 0L3.232 16.5c-.77.833.192 2.5 1.732 2.5z" />
               </svg>
               <h3 className="mt-2 text-sm font-medium text-yellow-800">ไม่พบ BOM ในระบบ</h3>
-              <p className="mt-1 text-sm text-yellow-600">สินค้านี้อาจยังไม่มี BOM หรือต้องสร้าง BOQ ชั่วคราว</p>
+              <p className="mt-1 text-sm text-yellow-600">ทีม Costing จะตรวจสอบและสร้าง BOM ให้หลังจากรับคำขอ</p>
             </div>
           )}
-        </div>
+            </div>
 
-        {/* Calculation Section */}
-        <div className="bg-white p-6 sm:p-8 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold text-slate-800">4. การคำนวณราคา</h2>
-            <button
-              type="button"
-              onClick={handleCalculatePrice}
-              disabled={boqItems.length === 0 || isLoading || isFetchingBOM}
-              className="px-6 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {isLoading ? 'กำลังคำนวณ...' : 'คำนวณราคา'}
-            </button>
-          </div>
-
-          {/* Calculation Results */}
-          {calculationResult && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-              <h3 className="text-lg font-semibold text-green-800 mb-4">ผลการคำนวณ</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="text-center">
-                  <div className="text-sm text-green-600 mb-1">ราคาต้นทุนพื้นฐาน</div>
-                  <div className="text-2xl font-bold text-green-800">
-                    {parseFloat(calculationResult.basePrice).toLocaleString()} {calculationResult.currency}
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="text-sm text-green-600 mb-1">อัตราส่วนกำไร</div>
-                  <div className="text-2xl font-bold text-green-800">
-                    {calculationResult.sellingFactor}x
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="text-sm text-green-600 mb-1">ราคาขายที่แนะนำ</div>
-                  <div className="text-3xl font-bold text-green-800">
-                    {parseFloat(calculationResult.finalPrice).toLocaleString()} {calculationResult.currency}
-                  </div>
+            {/* Special Requests Section Card */}
+            <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
+              <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 rounded-t-lg">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-slate-800 flex items-center">
+                    <svg className="w-5 h-5 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                    </svg>
+                    คำขอพิเศษ
+                  </h2>
+                  <span className="text-sm bg-purple-100 text-purple-700 px-2 py-1 rounded-full">{specialRequests.length} รายการ</span>
                 </div>
               </div>
-            </div>
-          )}
+              <div className="p-6">
 
-          {/* Calculation Placeholder */}
-          {!calculationResult && boqItems.length > 0 && !isFetchingBOM && (
-            <div className="text-center py-8 border-2 border-dashed border-slate-300 rounded-lg">
-              <svg className="mx-auto h-12 w-12 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-              </svg>
-              <h3 className="mt-2 text-sm font-medium text-slate-900">พร้อมคำนวณราคา</h3>
-              <p className="mt-1 text-sm text-slate-500">กดปุ่ม "คำนวณราคา" เพื่อดูผลลัพธ์</p>
-            </div>
-          )}
+            {/* Add Special Request Form - Only show when not readonly */}
+            {!isReadonly && (
+              <div className="mb-4 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+              <h4 className="text-sm font-semibold text-orange-900 mb-3">เพิ่มคำขอพิเศษ</h4>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">ประเภท</label>
+                  <select
+                    value={newSpecialRequest.category}
+                    onChange={(e) => setNewSpecialRequest(prev => ({ ...prev, category: e.target.value }))}
+                    className="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-orange-500"
+                  >
+                    <option value="">เลือกประเภท</option>
+                    <option value="พิเศษทางเทคนิค">พิเศษทางเทคนิค</option>
+                    <option value="การปรับแต่งสินค้า">การปรับแต่งสินค้า</option>
+                    <option value="การจัดส่งพิเศษ">การจัดส่งพิเศษ</option>
+                    <option value="การบรรจุภัณฑ์พิเศษ">การบรรจุภัณฑ์พิเศษ</option>
+                    <option value="อื่น ๆ">อื่น ๆ</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">รายละเอียด</label>
+                  <textarea
+                    value={newSpecialRequest.description}
+                    onChange={(e) => setNewSpecialRequest(prev => ({ ...prev, description: e.target.value }))}
+                    className="w-full p-3 border border-slate-300 rounded-md focus:ring-2 focus:ring-orange-500"
+                    rows={3}
+                    placeholder="อธิบายรายละเอียดคำขอพิเศษ..."
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddSpecialRequest}
+                  className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition-colors"
+                >
+                  เพิ่มคำขอ
+                </button>
+              </div>
+              </div>
+            )}
 
-          {(boqItems.length === 0 || isFetchingBOM) && (
-            <div className="text-center py-8 border-2 border-dashed border-slate-300 rounded-lg">
-              <svg className="mx-auto h-12 w-12 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4" />
-              </svg>
-              <h3 className="mt-2 text-sm font-medium text-slate-900">
-                {isFetchingBOM ? 'กำลังโหลด BOM จากระบบ...' : 'เพิ่มวัตถุดิบก่อนคำนวณ'}
-              </h3>
-              <p className="mt-1 text-sm text-slate-500">
-                {isFetchingBOM ? 'กรุณารอสักครู่...' : 'กรุณาเพิ่มรายการวัตถุดิบก่อนที่จะสามารถคำนวณราคาได้'}
-              </p>
+            {/* Special Requests List */}
+            {specialRequests.length > 0 && (
+              <div className="space-y-3">
+                {specialRequests.map((request) => (
+                  <div key={request.id} className="p-4 bg-slate-50 border border-slate-200 rounded-lg">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                            {request.category}
+                          </span>
+                        </div>
+                        <p className="text-sm text-slate-700">{request.description}</p>
+                      </div>
+                      {!isReadonly && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSpecialRequest(request.id)}
+                          className="text-red-600 hover:text-red-800 p-1"
+                          title="ลบคำขอพิเศษ"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {specialRequests.length === 0 && (
+              <div className="text-center py-6 border-2 border-dashed border-orange-300 rounded-lg bg-orange-50">
+                <svg className="mx-auto h-8 w-8 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                <h3 className="mt-2 text-sm font-medium text-orange-800">ไม่มีคำขอพิเศษ</h3>
+                <p className="mt-1 text-sm text-orange-600">ใช้ฟอร์มด้านบนเพื่อเพิ่มคำขอพิเศษ</p>
+              </div>
+            )}
+              </div>
             </div>
-          )}
+
+            {/* ApprovalWorkflow - Show only in edit mode */}
+            {requestId && (
+              <ApprovalWorkflow
+                requestStatus={requestStatus}
+                readonly={isReadonly}
+                onApproveStep={(stepId, comment) => {
+                  console.log(`Approved step ${stepId} with comment: ${comment}`);
+                  // TODO: Implement approval logic
+                }}
+              />
+            )}
+          </div>
         </div>
+      </div>
 
-        {/* Form Actions */}
+      {/* Form Actions - Full width below both columns */}
+      <div className="mt-8">
         <div className="flex flex-col sm:flex-row gap-4 justify-end">
           <button
             type="button"
@@ -879,30 +916,62 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
             disabled={isLoading}
             className="px-6 py-3 text-slate-700 font-semibold bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            ยกเลิก
+            {isReadonly ? 'กลับ' : 'ยกเลิก'}
           </button>
-          <button
-            type="submit"
-            disabled={isLoading || isFetchingBOM ||
-              (customerType === 'existing' && !formData.customerId) ||
-              (customerType === 'new' && !formData.newCustomerName) ||
-              (productType === 'existing' && !formData.productId) ||
-              (productType === 'new' && !formData.newProductName)
-            }
-            className="px-6 py-3 text-white font-semibold bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors min-w-[140px] flex items-center justify-center"
-          >
-            {isLoading ? (
-              <>
-                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                กำลังบันทึก...
-              </>
-            ) : (
-              requestId ? 'อัปเดตคำขอ' : 'สร้างคำขอ'
-            )}
-          </button>
+
+          {/* Save Draft Button - Only show when not readonly */}
+          {!isReadonly && (
+            <button
+              type="button"
+              onClick={handleSaveDraft}
+              disabled={isLoading || isFetchingBOM ||
+                (customerType === 'existing' && !formData.customerId) ||
+                (customerType === 'new' && !formData.newCustomerName) ||
+                (productType === 'existing' && !formData.productId) ||
+                (productType === 'new' && !formData.newProductName)
+              }
+              className="px-6 py-3 text-slate-700 font-semibold bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors min-w-[140px] flex items-center justify-center"
+            >
+              {isLoading ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-slate-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  กำลังบันทึก...
+                </>
+              ) : (
+                'บันทึกร่าง'
+              )}
+            </button>
+          )}
+
+          {/* Submit Request Button - Only show when not readonly */}
+          {!isReadonly && (
+            <button
+              type="button"
+              onClick={handleSubmitRequest}
+              disabled={isLoading || isFetchingBOM ||
+                (customerType === 'existing' && !formData.customerId) ||
+                (customerType === 'new' && !formData.newCustomerName) ||
+                (productType === 'existing' && !formData.productId) ||
+                (productType === 'new' && !formData.newProductName)
+              }
+              className="px-6 py-3 text-white font-semibold bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors min-w-[140px] flex items-center justify-center"
+            >
+              {isLoading ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  กำลังส่ง...
+                </>
+              ) : (
+                requestId ? 'อัปเดตคำขอราคา' : 'ส่งคำขอราคา'
+              )}
+            </button>
+          )}
         </div>
       </div>
     </form>

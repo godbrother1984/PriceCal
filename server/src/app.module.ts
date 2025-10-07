@@ -3,11 +3,16 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
+import { ImportModule } from './import/import.module';
+import { ApiSettingsModule } from './api-settings/api-settings.module';
+import { MongodbModule } from './mongodb/mongodb.module';
 import { SetupController } from './setup/setup.controller';
 import { PricingController } from './pricing/pricing.controller';
 import { PricingService } from './pricing/pricing.service';
 import { DataController } from './data/data.controller';
 import { DataService } from './data/data.service';
+import { ActivityLogController } from './activity-log/activity-log.controller';
+import { ActivityLogService } from './activity-log/activity-log.service';
 import { SeederService } from './database/seeder.service';
 import { databaseConfig } from './database/database.config';
 
@@ -20,6 +25,20 @@ import { CustomerGroup } from './entities/customer-group.entity';
 import { SystemConfig } from './entities/system-config.entity';
 import { PriceRequest } from './entities/price-request.entity';
 import { BOM } from './entities/bom.entity';
+import { FabCost } from './entities/fab-cost.entity';
+import { StandardPrice } from './entities/standard-price.entity';
+import { SellingFactor } from './entities/selling-factor.entity';
+import { LmePrice } from './entities/lme-price.entity';
+import { LmeMasterData } from './entities/lme-master-data.entity';
+import { ExchangeRate } from './entities/exchange-rate.entity';
+import { ExchangeRateMasterData } from './entities/exchange-rate-master-data.entity';
+import { ActivityLog } from './entities/activity-log.entity';
+import { ApiSetting } from './entities/api-setting.entity';
+import { Currency } from './entities/currency.entity';
+import { CustomerMapping } from './entities/customer-mapping.entity';
+import { StandardPriceHistory } from './entities/standard-price-history.entity';
+import { FabCostHistory } from './entities/fab-cost-history.entity';
+import { SellingFactorHistory } from './entities/selling-factor-history.entity';
 
 @Module({
   imports: [
@@ -32,19 +51,38 @@ import { BOM } from './entities/bom.entity';
       CustomerGroup,
       SystemConfig,
       PriceRequest,
-      BOM
+      BOM,
+      FabCost,
+      FabCostHistory,
+      StandardPrice,
+      StandardPriceHistory,
+      SellingFactor,
+      SellingFactorHistory,
+      LmePrice,
+      LmeMasterData,
+      ExchangeRate,
+      ExchangeRateMasterData,
+      ActivityLog,
+      ApiSetting,
+      Currency,
+      CustomerMapping
     ]),
     AuthModule,
+    ImportModule,
+    ApiSettingsModule,
+    // MongodbModule, // Temporarily disabled - enable when MongoDB is running
   ],
   controllers: [
     AppController,
     DataController,
+    ActivityLogController,
     SetupController,
     PricingController,
   ],
   providers: [
     AppService,
     DataService,
+    ActivityLogService,
     PricingService,
     SeederService,
   ],
