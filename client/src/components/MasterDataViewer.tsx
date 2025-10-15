@@ -1,42 +1,9 @@
 // path: client/src/components/MasterDataViewer.tsx
-// version: 1.0 (Master Data Viewer - View Imported Data)
-// last-modified: 1 ตุลาคม 2568 11:45
+// version: 1.2 (Use Centralized API with JWT Authentication)
+// last-modified: 14 ตุลาคม 2568 15:50
 
 import React, { useState, useEffect } from 'react';
-
-interface RawMaterial {
-  id: string;
-  name: string;
-  unit: string;
-  category: string;
-  description?: string;
-  isActive: boolean;
-  sourceSystem?: string;
-  lastSyncedAt?: string;
-}
-
-interface Product {
-  id: string;
-  name: string;
-  category: string;
-  description?: string;
-  isActive: boolean;
-  sourceSystem?: string;
-  lastSyncedAt?: string;
-}
-
-interface Customer {
-  id: string;
-  name: string;
-  taxId?: string;
-  email?: string;
-  phone?: string;
-  address?: string;
-  customerGroupId?: string;
-  isActive: boolean;
-  sourceSystem?: string;
-  lastSyncedAt?: string;
-}
+import api from '../services/api';
 
 type DataType = 'rawMaterials' | 'finishedGoods' | 'customers' | 'employees';
 
@@ -57,25 +24,24 @@ const MasterDataViewer: React.FC = () => {
       let endpoint = '';
       switch (selectedType) {
         case 'rawMaterials':
-          endpoint = 'http://localhost:3001/api/data/raw-materials';
+          endpoint = '/api/data/raw-materials';
           break;
         case 'finishedGoods':
-          endpoint = 'http://localhost:3001/api/data/products';
+          endpoint = '/api/data/products';
           break;
         case 'customers':
-          endpoint = 'http://localhost:3001/api/data/customers';
+          endpoint = '/api/data/customers';
           break;
         case 'employees':
           // TODO: Create employees endpoint
-          endpoint = 'http://localhost:3001/api/data/employees';
+          endpoint = '/api/data/employees';
           break;
       }
 
-      const response = await fetch(endpoint);
-      const result = await response.json();
+      const response = await api.get(endpoint);
 
-      if (result.success) {
-        setData(result.data || []);
+      if (response.data.success) {
+        setData(response.data.data || []);
       }
     } catch (error) {
       console.error('Error loading data:', error);
@@ -147,7 +113,7 @@ const MasterDataViewer: React.FC = () => {
             <div className="text-2xl mb-2">🔧</div>
             <div className="font-semibold text-sm">Raw Materials</div>
             <div className="text-xs text-slate-500 mt-1">
-              {data.filter((d) => selectedType === 'rawMaterials').length} รายการ
+              {selectedType === 'rawMaterials' ? data.length : 0} รายการ
             </div>
           </button>
 
@@ -162,7 +128,7 @@ const MasterDataViewer: React.FC = () => {
             <div className="text-2xl mb-2">📦</div>
             <div className="font-semibold text-sm">Finished Goods</div>
             <div className="text-xs text-slate-500 mt-1">
-              {data.filter((d) => selectedType === 'finishedGoods').length} รายการ
+              {selectedType === 'finishedGoods' ? data.length : 0} รายการ
             </div>
           </button>
 
@@ -177,7 +143,7 @@ const MasterDataViewer: React.FC = () => {
             <div className="text-2xl mb-2">🏢</div>
             <div className="font-semibold text-sm">Customers</div>
             <div className="text-xs text-slate-500 mt-1">
-              {data.filter((d) => selectedType === 'customers').length} รายการ
+              {selectedType === 'customers' ? data.length : 0} รายการ
             </div>
           </button>
 

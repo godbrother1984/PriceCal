@@ -1,11 +1,13 @@
 // path: server/src/data/data.controller.ts
-// version: 1.4 (Add Default Customer Group Endpoint)
-// last-modified: 1 ตุลาคม 2568 18:35
+// version: 2.0 (Add JWT Authentication Guard)
+// last-modified: 14 ตุลาคม 2568 15:40
 
-import { Controller, Get, Post, Put, Delete, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { DataService } from './data.service';
 
 @Controller('api/data')
+@UseGuards(JwtAuthGuard)
 export class DataController {
   constructor(private readonly dataService: DataService) {}
 

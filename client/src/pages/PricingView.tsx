@@ -1,31 +1,12 @@
 // path: client/src/pages/PricingView.tsx
-// version: 1.6 (Add Revision Reason Support)
-// last-modified: 29 กันยายน 2568 16:40
+// version: 2.0 (Use Centralized API with JWT Authentication)
+// last-modified: 14 ตุลาคม 2568 16:30
 
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../services/api'; // ✅ ใช้ centralized api instance ที่มี JWT interceptor
 import eventBus, { EVENTS } from '../services/eventBus';
 import ApprovalWorkflow from '../components/ApprovalWorkflow';
 import ActivityLogs from '../components/ActivityLogs';
-
-// --- API Configuration ---
-const api = axios.create({
-  baseURL: 'http://localhost:3001',
-  timeout: 10000,
-});
-
-api.interceptors.response.use(
-  (response) => {
-    if (response.data?.success && response.data?.data !== undefined) {
-      return { ...response, data: response.data.data };
-    }
-    return response;
-  },
-  (error) => {
-    console.error('API Error:', error);
-    return Promise.reject(error);
-  }
-);
 
 // --- Types ---
 interface PricingViewProps {

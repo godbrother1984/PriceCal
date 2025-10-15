@@ -1,31 +1,10 @@
 // path: client/src/pages/PriceRequestList.tsx
-// version: 2.6 (Auto-refresh Status Updates)
-// last-modified: 23 กันยายน 2568 15:45
+// version: 3.0 (Use Centralized API with JWT Authentication)
+// last-modified: 14 ตุลาคม 2568 16:20
 
 import React, { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import api from '../services/api'; // ✅ ใช้ centralized api instance ที่มี JWT interceptor
 import eventBus, { EVENTS } from '../services/eventBus';
-
-// --- API Configuration ---
-const api = axios.create({
-  baseURL: 'http://localhost:3001',
-  timeout: 10000,
-});
-
-// Add response interceptor to handle API responses consistently
-api.interceptors.response.use(
-  (response) => {
-    // If backend uses ResponseInterceptor, extract data
-    if (response.data?.success && response.data?.data !== undefined) {
-      return { ...response, data: response.data.data };
-    }
-    return response;
-  },
-  (error) => {
-    console.error('API Error:', error);
-    return Promise.reject(error);
-  }
-);
 
 // --- Interfaces ---
 interface PriceRequest {

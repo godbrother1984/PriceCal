@@ -1,24 +1,27 @@
 // path: server/src/master-data/master-data.controller.ts
-// version: 2.1 (Add D365 Mock Endpoints & Full CRUD)
-// last-modified: 1 กันยายน 2568
+// version: 3.0 (Add JWT Authentication Guard)
+// last-modified: 14 ตุลาคม 2568 15:45
 
-import { 
-  Controller, 
-  Get, 
-  Post, 
-  Put, 
-  Delete, 
-  Body, 
-  Param, 
-  HttpCode, 
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  HttpCode,
   HttpStatus,
   BadRequestException,
   NotFoundException,
-  ConflictException
+  ConflictException,
+  UseGuards
 } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { MockDataService } from '../mock-data/mock-data.service';
 
 @Controller('mock-data')
+@UseGuards(JwtAuthGuard)
 export class MasterDataController {
   constructor(private readonly mockDataService: MockDataService) {}
 

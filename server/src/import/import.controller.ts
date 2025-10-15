@@ -1,42 +1,35 @@
 // path: server/src/import/import.controller.ts
-// version: 1.0 (Master Data Import Controller)
-// last-modified: 1 ตุลาคม 2568 10:10
+// version: 3.0 (Add JWT Authentication Guard)
+// last-modified: 14 ตุลาคม 2568 15:40
 
-import { Controller, Post, Get, Body, Logger } from '@nestjs/common';
+import { Controller, Post, Get, Body, Logger, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ImportService } from './import.service';
 
 @Controller('api/import')
+@UseGuards(JwtAuthGuard)
 export class ImportController {
   private readonly logger = new Logger(ImportController.name);
 
   constructor(private readonly importService: ImportService) {}
 
   /**
-   * Manual import of all master data
+   * Manual import of all data (MongoDB Sync)
+   * Redirects to /sync/all endpoint
    */
   @Post('all')
   async importAll() {
-    this.logger.log('Manual import triggered for all data');
-    const result = await this.importService.importAll();
-
-    if (result.success) {
-      await this.importService.updateLastSyncTimestamp();
-    }
-
-    return {
-      success: result.success,
-      message: result.message,
-      data: result.stats,
-      errors: result.errors,
-    };
+    this.logger.log('Manual import triggered for all data (redirect to sync/all)');
+    return this.syncAllData();
   }
 
   /**
-   * Manual import of raw materials only
+   * Manual import of raw materials only (DEPRECATED - use MongoDB import)
+   * Now redirects to sync/raw-materials endpoint
    */
   @Post('raw-materials')
   async importRawMaterials() {
-    this.logger.log('Manual import triggered for raw materials');
+    this.logger.log('Manual import triggered for raw materials (deprecated, use MongoDB)');
     const result = await this.importService.importRawMaterials();
 
     return {
@@ -48,19 +41,13 @@ export class ImportController {
   }
 
   /**
-   * Manual import of finished goods and BOQ
+   * Manual import of finished goods and BOQ (DEPRECATED - use MongoDB import)
+   * Now redirects to sync/products endpoint
    */
   @Post('finished-goods')
   async importFinishedGoods() {
-    this.logger.log('Manual import triggered for finished goods');
-    const result = await this.importService.importFinishedGoods();
-
-    return {
-      success: result.success,
-      message: result.message,
-      data: result.stats,
-      errors: result.errors,
-    };
+    this.logger.log('Manual import triggered for finished goods (deprecated, use MongoDB)');
+    return this.importProducts();
   }
 
   /**
@@ -107,7 +94,7 @@ export class ImportController {
     }
 
     this.logger.log('Auto-update triggered');
-    const result = await this.importService.importAll();
+    const result = await this.importService.importAllData();
 
     if (result.success) {
       await this.importService.updateLastSyncTimestamp();
@@ -122,5 +109,130 @@ export class ImportController {
       },
       errors: result.errors,
     };
+  }
+
+  // ==================== Entity Sync Endpoints (with Toggle) ====================
+
+  /**
+   * Import Customers from MongoDB
+   */
+  @Post('sync/customers')
+  async importCustomers() {
+    this.logger.log('Manual sync triggered for Customers');
+    const result = await this.importService.importCustomers();
+
+    return {
+      success: result.success,
+      message: result.message,
+      data: result.stats,
+      errors: result.errors,
+    };
+  }
+
+  /**
+   * Import Products (Finished Goods) from MongoDB
+   */
+  @Post('sync/products')
+  async importProducts() {
+    this.logger.log('Manual sync triggered for Products');
+    const result = await this.importService.importProducts();
+
+    return {
+      success: result.success,
+      message: result.message,
+      data: result.stats,
+      errors: result.errors,
+    };
+  }
+
+  /**
+   * Import Standard Prices from MongoDB
+   */
+  @Post('sync/standard-prices')
+  async importStandardPrices() {
+    this.logger.log('Manual sync triggered for Standard Prices');
+    const result = await this.importService.importStandardPrices();
+
+    return {
+      success: result.success,
+      message: result.message,
+      data: result.stats,
+      errors: result.errors,
+    };
+  }
+
+  /**
+   * Import LME Prices from MongoDB
+   */
+  @Post('sync/lme-prices')
+  async importLmePrices() {
+    this.logger.log('Manual sync triggered for LME Prices');
+    const result = await this.importService.importLmePrices();
+
+    return {
+      success: result.success,
+      message: result.message,
+      data: result.stats,
+      errors: result.errors,
+    };
+  }
+
+  /**
+   * Import Exchange Rates from MongoDB
+   */
+  @Post('sync/exchange-rates')
+  async importExchangeRates() {
+    this.logger.log('Manual sync triggered for Exchange Rates');
+    const result = await this.importService.importExchangeRates();
+
+    return {
+      success: result.success,
+      message: result.message,
+      data: result.stats,
+      errors: result.errors,
+    };
+  }
+
+  /**
+   * Sync All Data (Customers, Products, Master Data)
+   */
+  @Post('sync/all')
+  async syncAllData() {
+    this.logger.log('Manual sync triggered for All Data');
+    const result = await this.importService.importAllData();
+
+    if (result.success) {
+      await this.importService.updateLastSyncTimestamp();
+    }
+
+    return result;
+  }
+
+  // ==================== Legacy Endpoints (Backward Compatibility) ====================
+
+  /**
+   * Import All Master Data from MongoDB (Legacy)
+   */
+  @Post('master-data/all')
+  async importAllMasterData() {
+    this.logger.log('Manual import triggered for All Master Data (Legacy)');
+    const result = await this.importService.importAllMasterData();
+
+    return result;
+  }
+
+  @Post('master-data/standard-prices')
+  async importStandardPricesLegacy() {
+    return this.importStandardPrices();
+  }
+
+  @Post('master-data/lme-prices')
+  async importLmePricesLegacy() {
+    return this.importLmePrices();
+  }
+
+  @Post('master-data/exchange-rates')
+  async importExchangeRatesLegacy() {
+    return this.importExchangeRates();
   }
 }

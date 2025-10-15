@@ -1,9 +1,10 @@
 // path: client/src/pages/Settings.tsx
-// version: 1.3 (Add MongoDB Connection Settings)
-// last-modified: 1 ตุลาคม 2568 15:35
+// version: 2.0 (Use Centralized API with JWT Authentication)
+// last-modified: 14 ตุลาคม 2568
 
 import React, { useState, useEffect } from 'react';
 import ApiSettings from '../components/ApiSettings';
+import api from '../services/api';
 
 type SettingsTab = 'api' | 'system' | 'import' | 'mongodb';
 
@@ -25,13 +26,11 @@ const SystemConfig: React.FC = () => {
 
     const loadConfig = async () => {
       try {
-        const response = await fetch('http://localhost:3001/api/data/system-config/systemSettings');
-        if (response.ok) {
-          const data = await response.json();
-          if (data && data.value) {
-            const savedConfig = JSON.parse(data.value);
-            setConfig(savedConfig);
-          }
+        const response = await api.get('/api/data/system-config/systemSettings');
+        const data = response.data;
+        if (data && data.value) {
+          const savedConfig = JSON.parse(data.value);
+          setConfig(savedConfig);
         }
       } catch (error) {
         console.error('Failed to load settings:', error);
@@ -43,21 +42,16 @@ const SystemConfig: React.FC = () => {
     const handleSave = async () => {
       setSaving(true);
       try {
-        // TODO: Call API to save system config
-        await fetch('http://localhost:3001/api/data/system-config/systemSettings', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            value: JSON.stringify(config),
-            description: 'System configuration settings',
-          }),
+        await api.put('/api/data/system-config/systemSettings', {
+          value: JSON.stringify(config),
+          description: 'System configuration settings',
         });
 
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
-      } catch (error) {
+      } catch (error: any) {
         console.error('Failed to save settings:', error);
-        alert('เกิดข้อผิดพลาดในการบันทึกการตั้งค่า');
+        alert(error.response?.data?.message || 'เกิดข้อผิดพลาดในการบันทึกการตั้งค่า');
       } finally {
         setSaving(false);
       }
@@ -184,13 +178,11 @@ const ImportConfig: React.FC = () => {
 
     const loadConfig = async () => {
       try {
-        const response = await fetch('http://localhost:3001/api/data/system-config/importSettings');
-        if (response.ok) {
-          const data = await response.json();
-          if (data && data.value) {
-            const savedConfig = JSON.parse(data.value);
-            setImportConfig(savedConfig);
-          }
+        const response = await api.get('/api/data/system-config/importSettings');
+        const data = response.data;
+        if (data && data.value) {
+          const savedConfig = JSON.parse(data.value);
+          setImportConfig(savedConfig);
         }
       } catch (error) {
         console.error('Failed to load import settings:', error);
@@ -202,20 +194,16 @@ const ImportConfig: React.FC = () => {
     const handleSave = async () => {
       setSaving(true);
       try {
-        await fetch('http://localhost:3001/api/data/system-config/importSettings', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            value: JSON.stringify(importConfig),
-            description: 'Import configuration settings',
-          }),
+        await api.put('/api/data/system-config/importSettings', {
+          value: JSON.stringify(importConfig),
+          description: 'Import configuration settings',
         });
 
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
-      } catch (error) {
+      } catch (error: any) {
         console.error('Failed to save import settings:', error);
-        alert('เกิดข้อผิดพลาดในการบันทึกการตั้งค่า');
+        alert(error.response?.data?.message || 'เกิดข้อผิดพลาดในการบันทึกการตั้งค่า');
       } finally {
         setSaving(false);
       }
@@ -330,13 +318,11 @@ const MongoDBConfig: React.FC = () => {
 
   const loadConfig = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/data/system-config/mongodbSettings');
-      if (response.ok) {
-        const data = await response.json();
-        if (data && data.value) {
-          const savedConfig = JSON.parse(data.value);
-          setMongoConfig(savedConfig);
-        }
+      const response = await api.get('/api/data/system-config/mongodbSettings');
+      const data = response.data;
+      if (data && data.value) {
+        const savedConfig = JSON.parse(data.value);
+        setMongoConfig(savedConfig);
       }
     } catch (error) {
       console.error('Failed to load MongoDB settings:', error);
@@ -348,25 +334,21 @@ const MongoDBConfig: React.FC = () => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const response = await fetch('http://localhost:3001/api/data/system-config/mongodbSettings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          value: JSON.stringify(mongoConfig),
-          description: 'MongoDB connection settings',
-        }),
+      const response = await api.put('/api/data/system-config/mongodbSettings', {
+        value: JSON.stringify(mongoConfig),
+        description: 'MongoDB connection settings',
       });
 
-      if (response.ok) {
+      if (response.data.success) {
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
         alert('บันทึกการตั้งค่า MongoDB เรียบร้อย\nกรุณา restart server เพื่อให้การตั้งค่ามีผล');
       } else {
         alert('เกิดข้อผิดพลาดในการบันทึกการตั้งค่า');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save MongoDB settings:', error);
-      alert('เกิดข้อผิดพลาดในการบันทึกการตั้งค่า');
+      alert(error.response?.data?.message || 'เกิดข้อผิดพลาดในการบันทึกการตั้งค่า');
     } finally {
       setSaving(false);
     }

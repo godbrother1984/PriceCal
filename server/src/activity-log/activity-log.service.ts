@@ -1,6 +1,6 @@
 // path: server/src/activity-log/activity-log.service.ts
-// version: 1.1 (Add Master Data Change Logging)
-// last-modified: 1 ตุลาคม 2568 17:15
+// version: 1.2 (Add Price Calculation Logging)
+// last-modified: 7 ตุลาคม 2568 17:15
 
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -150,6 +150,26 @@ export class ActivityLogService {
       description: `อัปเดต BOQ (รายการวัสดุ)`,
       oldValue: oldBoq,
       newValue: newBoq,
+    });
+  }
+
+  async logPriceCalculation(
+    requestId: string,
+    userId: string,
+    userName: string,
+    productId: string,
+    productName: string,
+    quantity: number,
+    calculationResult: any,
+  ) {
+    return this.createLog({
+      requestId: requestId || productId, // ถ้าไม่มี requestId ใช้ productId
+      userId,
+      userName,
+      activityType: 'PRICE_CALCULATED',
+      description: `คำนวณราคาสินค้า ${productName} (${productId}) จำนวน ${quantity} หน่วย - ราคาขาย: ${calculationResult.sellingPriceThb?.toFixed(2) || 'N/A'} THB`,
+      newValue: calculationResult,
+      notes: `Total Cost: ${calculationResult.totalCost?.toFixed(2)} USD, Margin: ${calculationResult.marginPercentage?.toFixed(2)}%`,
     });
   }
 

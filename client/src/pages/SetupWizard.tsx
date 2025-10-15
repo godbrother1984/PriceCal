@@ -50,7 +50,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onSetupComplete }) => {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:3001/setup/initialize', {
+      const response = await fetch('http://localhost:3000/setup/initialize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),

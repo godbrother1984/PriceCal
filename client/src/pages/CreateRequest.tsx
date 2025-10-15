@@ -1,10 +1,12 @@
 // path: client/src/pages/CreateRequest.tsx
-// version: 3.6 (Add Readonly Mode for Submitted Requests)
-// last-modified: 26 กันยายน 2568 00:20
+// version: 4.0 (Replace fetch() with axios api instance)
+// last-modified: 14 ตุลาคม 2568 16:45
 
 import React, { useState, useEffect } from 'react';
+import api from '../services/api'; // ✅ ใช้ centralized api instance ที่มี JWT interceptor
 import eventBus, { EVENTS } from '../services/eventBus';
 import ApprovalWorkflow from '../components/ApprovalWorkflow';
+import PriceCalculator from '../components/PriceCalculator';
 
 // --- Interfaces ---
 interface CreateRequestProps {
@@ -129,18 +131,14 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
     const fetchAllMasterData = async () => {
       try {
         const [custRes, prodRes] = await Promise.all([
-          fetch('http://localhost:3001/api/data/customers'),
-          fetch('http://localhost:3001/api/data/products')
+          api.get('/api/data/customers'),
+          api.get('/api/data/products')
           // ลบการโหลด raw-materials - Sales user ไม่ต้องใช้
         ]);
 
-        const [custData, prodData] = await Promise.all([
-          custRes.json(),
-          prodRes.json()
-        ]);
-
-        setCustomers(extractApiArrayData(custData) as Customer[]);
-        setProducts(extractApiArrayData(prodData) as Product[]);
+        // axios response.data contains the response body already parsed
+        setCustomers(extractApiArrayData(custRes.data) as Customer[]);
+        setProducts(extractApiArrayData(prodRes.data) as Product[]);
 
         console.log('[CreateRequest] Master data loaded');
 
@@ -158,9 +156,9 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
     if (requestId) {
       const loadRequestData = async () => {
         try {
-          const response = await fetch(`http://localhost:3001/api/data/requests/${requestId}`);
-          const responseData = await response.json();
-          const requestData = extractSingleApiData(responseData) as RequestData;
+          const response = await api.get(`/api/data/requests/${requestId}`);
+          // axios response.data contains the response body already parsed
+          const requestData = extractSingleApiData(response.data) as RequestData;
 
           if (requestData) {
             setFormData(requestData.formData || {});
@@ -211,30 +209,27 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
   const fetchBOMForProduct = async (productId: string) => {
     setIsFetchingBOM(true);
     try {
-      const response = await fetch(`http://localhost:3001/api/data/bom/product/${productId}`);
-      if (response.ok) {
-        const bomData = await response.json();
-        const bomItems = extractApiArrayData(bomData) as any[];
+      const response = await api.get(`/api/data/bom/product/${productId}`);
+      // axios response.data contains the response body already parsed
+      const bomItems = extractApiArrayData(response.data) as any[];
 
-        // แปลง BOM data เป็น BOQ format
-        const boqItems: BoqItem[] = bomItems.map((bom, index) => ({
-          id: Date.now() + index,
-          rmId: bom.rawMaterial?.id || bom.rawMaterialId,
-          rmName: bom.rawMaterial?.name || 'Unknown Material',
-          rmUnit: bom.rawMaterial?.unit || 'pcs',
-          quantity: parseFloat(bom.quantity) || 0
-        }));
+      // แปลง BOM data เป็น BOQ format
+      const boqItems: BoqItem[] = bomItems.map((bom, index) => ({
+        id: Date.now() + index,
+        rmId: bom.rawMaterial?.id || bom.rawMaterialId,
+        rmName: bom.rawMaterial?.name || 'Unknown Material',
+        rmUnit: bom.rawMaterial?.unit || 'pcs',
+        quantity: parseFloat(bom.quantity) || 0
+      }));
 
-        setBoqItems(boqItems);
-        console.log(`[CreateRequest] BOM loaded for product ${productId}:`, boqItems.length, 'items');
-      } else {
-        // ถ้าไม่พบ BOM ในระบบ ให้เคลียร์ BOQ และให้ผู้ใช้สร้างเอง
-        setBoqItems([]);
-        console.log(`[CreateRequest] No BOM found for product ${productId}, manual BOQ required`);
-      }
+      setBoqItems(boqItems);
+      console.log(`[CreateRequest] BOM loaded for product ${productId}:`, boqItems.length, 'items');
     } catch (err) {
+      // axios throws error for HTTP error status (404, 500, etc.)
       console.error("Failed to fetch BOM from database", err);
+      // ถ้าไม่พบ BOM ในระบบ ให้เคลียร์ BOQ และให้ผู้ใช้สร้างเอง
       setBoqItems([]);
+      console.log(`[CreateRequest] No BOM found for product ${productId}, manual BOQ required`);
     } finally {
       setIsFetchingBOM(false);
     }
@@ -301,25 +296,18 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
         status: 'Draft'
       };
 
-      const url = requestId
-        ? `http://localhost:3001/api/data/requests/${requestId}`
-        : 'http://localhost:3001/api/data/requests';
-      const method = requestId ? 'PUT' : 'POST';
-
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestData)
-      });
-
-      if (response.ok) {
-        setRequestStatus('Draft');
-        alert('บันทึกเป็น Draft เรียบร้อยแล้ว');
-        if (!requestId) onSuccess(); // ถ้าเป็นการสร้างใหม่ให้กลับไปหน้า list
+      // Use axios for PUT/POST
+      if (requestId) {
+        await api.put(`/api/data/requests/${requestId}`, requestData);
       } else {
-        throw new Error('Failed to save request');
+        await api.post('/api/data/requests', requestData);
       }
+
+      setRequestStatus('Draft');
+      alert('บันทึกเป็น Draft เรียบร้อยแล้ว');
+      if (!requestId) onSuccess(); // ถ้าเป็นการสร้างใหม่ให้กลับไปหน้า list
     } catch (err) {
+      console.error('Failed to save draft:', err);
       setError('ไม่สามารถบันทึกคำขอได้');
     } finally {
       setIsLoading(false);
@@ -341,25 +329,18 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
         status: 'Pending'
       };
 
-      const url = requestId
-        ? `http://localhost:3001/api/data/requests/${requestId}`
-        : 'http://localhost:3001/api/data/requests';
-      const method = requestId ? 'PUT' : 'POST';
-
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestData)
-      });
-
-      if (response.ok) {
-        setRequestStatus('Pending');
-        alert('ส่งคำขอราคาเรียบร้อยแล้ว');
-        onSuccess();
+      // Use axios for PUT/POST
+      if (requestId) {
+        await api.put(`/api/data/requests/${requestId}`, requestData);
       } else {
-        throw new Error('Failed to submit request');
+        await api.post('/api/data/requests', requestData);
       }
+
+      setRequestStatus('Pending');
+      alert('ส่งคำขอราคาเรียบร้อยแล้ว');
+      onSuccess();
     } catch (err) {
+      console.error('Failed to submit request:', err);
       setError('ไม่สามารถส่งคำขอได้');
     } finally {
       setIsLoading(false);
@@ -902,6 +883,33 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                   // TODO: Implement approval logic
                 }}
               />
+            )}
+
+            {/* Price Calculator - Show when product is selected and has quantity */}
+            {formData.productId && boqItems.length > 0 && (
+              <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
+                <div className="px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-green-50 to-blue-50 rounded-t-lg">
+                  <h2 className="text-lg font-semibold text-slate-800 flex items-center">
+                    <svg className="w-5 h-5 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                    </svg>
+                    คำนวณราคา (Price Calculation)
+                  </h2>
+                  <p className="text-sm text-slate-600 mt-1">
+                    คำนวณราคาจาก BOQ และ Master Pricing Data (Standard Price, LME Price, FAB Cost, Selling Factor, Exchange Rate)
+                  </p>
+                </div>
+                <div className="px-6 py-4">
+                  <PriceCalculator
+                    productId={formData.productId}
+                    quantity={1}
+                    onCalculationComplete={(result) => {
+                      console.log('Price calculation completed:', result);
+                      // TODO: Save calculation result to price request
+                    }}
+                  />
+                </div>
+              </div>
             )}
           </div>
         </div>

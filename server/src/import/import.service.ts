@@ -1,18 +1,23 @@
 // path: server/src/import/import.service.ts
-// version: 2.1 (Temporarily disable MongoDB)
-// last-modified: 1 ตุลาคม 2568 15:25
+// version: 5.1 (Optional MongoDB Services)
+// last-modified: 14 ตุลาคม 2568 16:00
 
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Customer } from '../entities/customer.entity';
 import { Product } from '../entities/product.entity';
 import { RawMaterial } from '../entities/raw-material.entity';
 import { BOM } from '../entities/bom.entity';
 import { SystemConfig } from '../entities/system-config.entity';
-import { ApiSetting } from '../entities/api-setting.entity';
-import axios from 'axios';
-// import { MongodbService } from '../mongodb/mongodb.service'; // Temporarily disabled
+import { StandardPrice } from '../entities/standard-price.entity';
+import { LmeMasterData } from '../entities/lme-master-data.entity';
+import { ExchangeRateMasterData } from '../entities/exchange-rate-master-data.entity';
+import { FabCost } from '../entities/fab-cost.entity';
+import { SellingFactor } from '../entities/selling-factor.entity';
+import { SyncConfig, EntityType } from '../entities/sync-config.entity';
+import { MongodbService } from '../mongodb/mongodb.service';
+import { MasterDataMongoService } from '../mongodb/master-data-mongo.service';
 
 interface ImportResult {
   success: boolean;
@@ -24,45 +29,6 @@ interface ImportResult {
     customers?: { inserted: number; updated: number; errors: number };
   };
   errors?: string[];
-}
-
-interface RawMaterialDTO {
-  ItemId: string;
-  'Product name': string;
-  'Search name': string;
-  'Item Group': string;
-  CurrencyCode: string;
-  'CIG Standard Price': number;
-  'Last Price': number;
-  'Inventory Average': number;
-  DataArea: string;
-  ModifiedDateTime: string;
-}
-
-interface BOMItemDTO {
-  ItemId: string;
-  Qty: number;
-  Unit: string;
-}
-
-interface FinishedGoodDTO {
-  'ItemId FG': string;
-  'ItemId RM': BOMItemDTO[];
-  'Product name': string;
-  'Search name': string;
-  'Item Group': string;
-  DataArea: string;
-  ModifiedDate: string;
-  CIGSQInch: number;
-  Model: string;
-  Part: string;
-}
-
-interface EmployeeDTO {
-  EmployeeId: string;
-  Name: string;
-  Email: string;
-  Department: string;
 }
 
 @Injectable()
@@ -80,507 +46,532 @@ export class ImportService {
     private bomRepository: Repository<BOM>,
     @InjectRepository(SystemConfig)
     private systemConfigRepository: Repository<SystemConfig>,
-    @InjectRepository(ApiSetting)
-    private apiSettingRepository: Repository<ApiSetting>,
-    // @Optional() private mongodbService: MongodbService, // Temporarily disabled
+    @InjectRepository(StandardPrice)
+    private standardPriceRepository: Repository<StandardPrice>,
+    @InjectRepository(LmeMasterData)
+    private lmeMasterDataRepository: Repository<LmeMasterData>,
+    @InjectRepository(ExchangeRateMasterData)
+    private exchangeRateRepository: Repository<ExchangeRateMasterData>,
+    @InjectRepository(FabCost)
+    private fabCostRepository: Repository<FabCost>,
+    @InjectRepository(SellingFactor)
+    private sellingFactorRepository: Repository<SellingFactor>,
+    @InjectRepository(SyncConfig)
+    private syncConfigRepository: Repository<SyncConfig>,
+    @Optional() private mongodbService: MongodbService,
+    @Optional() private masterDataMongoService: MasterDataMongoService,
   ) {}
 
   /**
-   * Get nested value from object using JSON path (e.g., 'data.items')
+   * ตรวจสอบว่า entity นี้เปิดใช้งาน sync หรือไม่
    */
-  private getNestedValue(obj: any, path: string): any {
-    if (!path) return obj;
-    return path.split('.').reduce((current, key) => current?.[key], obj);
+  async isSyncEnabled(entityType: EntityType): Promise<boolean> {
+    const config = await this.syncConfigRepository.findOne({
+      where: { entityType },
+    });
+    return config?.isEnabled ?? false;
   }
 
   /**
-   * Fetch data based on data source type (REST API or MongoDB)
+   * อัพเดทสถานะ sync config หลังจาก sync เสร็จ
    */
-  private async fetchData(apiSetting: ApiSetting): Promise<any[]> {
-    // Check if MongoDB source
-    if (apiSetting.dataSource === 'MONGODB') {
-      return await this.fetchFromMongoDB(apiSetting);
-    }
-
-    // Default to REST API
-    return await this.fetchFromApi(apiSetting);
+  async updateSyncStatus(
+    entityType: EntityType,
+    status: 'success' | 'failed' | 'partial',
+    message: string,
+    recordCount: number,
+  ): Promise<void> {
+    await this.syncConfigRepository.update(entityType, {
+      lastSyncAt: new Date(),
+      lastSyncStatus: status,
+      lastSyncMessage: message,
+      lastSyncRecords: recordCount,
+    });
   }
 
-  /**
-   * Fetch data from MongoDB
-   */
-  private async fetchFromMongoDB(apiSetting: ApiSetting): Promise<any[]> {
-    this.logger.log(`Fetching from MongoDB collection: ${apiSetting.mongoCollection}`);
-
-    // Temporarily disabled - MongoDB not available
-    throw new Error('MongoDB support is temporarily disabled. Please use API source instead.');
-
-    // try {
-    //   const query = apiSetting.mongoQuery ? JSON.parse(apiSetting.mongoQuery) : {};
-    //   const limit = apiSetting.maxRecords || 10000;
-
-    //   const data = await this.mongodbService.fetchData({
-    //     collection: apiSetting.mongoCollection,
-    //     query,
-    //     limit,
-    //   });
-
-    //   this.logger.log(`Fetched ${data.length} records from MongoDB`);
-    //   return data;
-    // } catch (error) {
-    //   this.logger.error(`Failed to fetch from MongoDB: ${error.message}`);
-    //   throw error;
-    // }
-  }
+  // ==================== Import Methods (MongoDB Only) ====================
 
   /**
-   * Fetch data from external API with authentication and pagination support
+   * Import Customers จาก MongoDB → SQLite/PostgreSQL
    */
-  private async fetchFromApi(apiSetting: ApiSetting): Promise<any[]> {
-    const method = apiSetting.httpMethod?.toUpperCase() || 'GET';
+  async importCustomers(): Promise<ImportResult> {
+    this.logger.log('Starting Customers import from MongoDB');
 
-    this.logger.log(`Fetching from API: ${apiSetting.url} (${method})`);
-
-    // If pagination not supported, fetch once
-    if (!apiSetting.supportsPagination) {
-      const config: any = {
-        url: apiSetting.url,
-        method: method,
-        headers: apiSetting.headers || {},
-        params: apiSetting.queryParams || {},
-      };
-
-      // Add request body for POST
-      if (method === 'POST' && apiSetting.requestBody) {
-        try {
-          config.data = JSON.parse(apiSetting.requestBody);
-        } catch (e) {
-          this.logger.error('Invalid request body JSON:', e);
-          throw new Error('Invalid request body format');
-        }
-      }
-
-      // Add authentication
-      this.addAuthentication(config, apiSetting);
-
-      const response = await axios(config);
-      const data = this.getNestedValue(response.data, apiSetting.dataPath);
-      return Array.isArray(data) ? data : [data];
-    }
-
-    // Handle pagination
-    return await this.fetchPaginatedData(apiSetting);
-  }
-
-  /**
-   * Add authentication to axios config
-   */
-  private addAuthentication(config: any, apiSetting: ApiSetting) {
-    if (apiSetting.authType === 'bearer' && apiSetting.authToken) {
-      config.headers['Authorization'] = `Bearer ${apiSetting.authToken}`;
-    } else if (apiSetting.authType === 'api-key' && apiSetting.authToken) {
-      config.headers['X-API-Key'] = apiSetting.authToken;
-    } else if (apiSetting.authType === 'basic' && apiSetting.authUsername && apiSetting.authPassword) {
-      config.auth = {
-        username: apiSetting.authUsername,
-        password: apiSetting.authPassword,
+    // ตรวจสอบว่าเปิดใช้งาน sync หรือไม่
+    const enabled = await this.isSyncEnabled('CUSTOMER');
+    if (!enabled) {
+      return {
+        success: false,
+        message: 'Customer sync is disabled',
+        stats: {},
       };
     }
-  }
 
-  /**
-   * Fetch paginated data from API
-   */
-  private async fetchPaginatedData(apiSetting: ApiSetting): Promise<any[]> {
-    const allData: any[] = [];
-    const method = apiSetting.httpMethod?.toUpperCase() || 'GET';
-    const paginationType = apiSetting.paginationType || 'offset';
-    const pageSize = apiSetting.pageSize || 100;
-    const maxRecords = apiSetting.maxRecords || null;
-
-    let currentPage = 1;
-    let currentOffset = 0;
-    let cursor: string | null = null;
-    let hasMore = true;
-
-    this.logger.log(`Starting paginated fetch (${paginationType}) - Page size: ${pageSize}`);
-
-    while (hasMore) {
-      const config: any = {
-        url: apiSetting.url,
-        method: method,
-        headers: apiSetting.headers || {},
-        params: { ...(apiSetting.queryParams || {}) },
-      };
-
-      // Add pagination parameters
-      if (paginationType === 'page') {
-        config.params[apiSetting.pageNumberParam || 'page'] = currentPage;
-        config.params[apiSetting.pageSizeParam || 'pageSize'] = pageSize;
-      } else if (paginationType === 'offset') {
-        config.params[apiSetting.offsetParam || 'offset'] = currentOffset;
-        config.params[apiSetting.pageSizeParam || 'limit'] = pageSize;
-      } else if (paginationType === 'cursor' && cursor) {
-        config.params[apiSetting.cursorParam || 'cursor'] = cursor;
-        config.params[apiSetting.pageSizeParam || 'limit'] = pageSize;
-      }
-
-      // Add request body for POST
-      if (method === 'POST' && apiSetting.requestBody) {
-        try {
-          const bodyTemplate = JSON.parse(apiSetting.requestBody);
-
-          // Merge pagination into body if needed
-          if (paginationType === 'page') {
-            bodyTemplate[apiSetting.pageNumberParam || 'page'] = currentPage;
-            bodyTemplate[apiSetting.pageSizeParam || 'pageSize'] = pageSize;
-          } else if (paginationType === 'offset') {
-            bodyTemplate[apiSetting.offsetParam || 'offset'] = currentOffset;
-            bodyTemplate[apiSetting.pageSizeParam || 'limit'] = pageSize;
-          }
-
-          config.data = bodyTemplate;
-        } catch (e) {
-          this.logger.error('Invalid request body JSON:', e);
-          throw new Error('Invalid request body format');
-        }
-      }
-
-      // Add authentication
-      this.addAuthentication(config, apiSetting);
-
-      try {
-        const response = await axios(config);
-        const pageData = this.getNestedValue(response.data, apiSetting.dataPath);
-        const items = Array.isArray(pageData) ? pageData : [];
-
-        this.logger.log(`Fetched page ${currentPage} - ${items.length} items`);
-
-        allData.push(...items);
-
-        // Check if we should continue
-        if (items.length === 0) {
-          hasMore = false;
-        } else if (items.length < pageSize) {
-          hasMore = false; // Last page
-        } else if (maxRecords && allData.length >= maxRecords) {
-          this.logger.log(`Reached max records limit: ${maxRecords}`);
-          hasMore = false;
-        } else if (paginationType === 'cursor') {
-          const nextCursor = this.getNestedValue(response.data, apiSetting.nextCursorPath);
-          if (!nextCursor) {
-            hasMore = false;
-          } else {
-            cursor = nextCursor;
-          }
-        }
-
-        // Increment for next iteration
-        currentPage++;
-        currentOffset += pageSize;
-
-        // Safety check: prevent infinite loops
-        if (currentPage > 10000) {
-          this.logger.warn('Reached safety limit of 10,000 pages');
-          hasMore = false;
-        }
-
-      } catch (error) {
-        this.logger.error(`Error fetching page ${currentPage}:`, error.message);
-        throw error;
-      }
+    if (!this.mongodbService) {
+      throw new BadRequestException('MongoDB service is not available. Please check ENABLE_MONGODB configuration.');
     }
-
-    this.logger.log(`Total records fetched: ${allData.length}`);
-
-    // Trim to maxRecords if specified
-    if (maxRecords && allData.length > maxRecords) {
-      return allData.slice(0, maxRecords);
-    }
-
-    return allData;
-  }
-
-  /**
-   * Import Raw Materials from External API
-   */
-  async importRawMaterials(): Promise<ImportResult> {
-    this.logger.log('Starting Raw Materials import from API');
 
     try {
-      // Get API settings
-      const apiSetting = await this.apiSettingRepository.findOne({
-        where: { apiType: 'RAW_MATERIALS', isActive: true },
+      // Get sync config
+      const syncConfig = await this.syncConfigRepository.findOne({
+        where: { entityType: 'CUSTOMER' },
       });
 
-      if (!apiSetting) {
-        return {
-          success: false,
-          message: 'Raw Materials API not configured',
-          stats: {},
-          errors: ['API settings not found. Please configure API in Master Data > API Settings'],
-        };
-      }
+      const data = await this.mongodbService.fetchData({
+        collection: syncConfig?.mongoCollection || 'customers',
+        query: syncConfig?.mongoQuery ? JSON.parse(syncConfig.mongoQuery) : { isActive: true },
+        limit: 10000,
+      });
 
-      // Fetch data from API or MongoDB (already handles pagination)
-      const rawMaterials: RawMaterialDTO[] = await this.fetchData(apiSetting);
+      // ✅ Bulk optimization
+      const customerIds = data.map(d => d.id || d.customerId);
+      const existingCustomers = await this.customerRepository.find({
+        where: { id: In(customerIds) },
+        select: ['id'],
+      });
+      const existingMap = new Map(existingCustomers.map(c => [c.id, true]));
 
-      if (!Array.isArray(rawMaterials) || rawMaterials.length === 0) {
-        return {
-          success: false,
-          message: 'No data returned from API',
-          stats: {},
-          errors: ['API returned empty or invalid data'],
-        };
-      }
-
-      this.logger.log(`Processing ${rawMaterials.length} raw materials...`);
-
-      let inserted = 0;
-      let updated = 0;
-      let errors = 0;
+      const toInsert: any[] = [];
+      const toUpdate: any[] = [];
       const errorMessages: string[] = [];
 
-      for (const rm of rawMaterials) {
+      for (const item of data) {
         try {
-          const existingRM = await this.rawMaterialRepository.findOne({
-            where: { id: rm.ItemId },
-          });
-
-          const rawMaterialData = {
-            id: rm.ItemId,
-            name: rm['Product name'] || rm['Search name'] || rm.ItemId,
-            unit: 'unit',
-            category: rm['Item Group'] || 'Uncategorized',
-            description: `${rm['Search name'] || ''} | Standard Price: ${rm['CIG Standard Price']} ${rm.CurrencyCode}`,
-            isActive: true,
-            sourceSystem: 'D365',
-            lastSyncedAt: new Date(),
+          const customerId = item.id || item.customerId;
+          const customerData = {
+            id: customerId,
+            name: item.name || item.customerName,
+            address: item.address,
+            contactPerson: item.contactPerson,
+            phone: item.phone,
+            email: item.email,
+            isActive: item.isActive !== undefined ? item.isActive : true,
+            externalId: item.externalId || item._id?.toString(),
+            lastSyncAt: new Date(),
+            source: 'MongoDB',
           };
 
-          if (existingRM) {
-            await this.rawMaterialRepository.update(rm.ItemId, rawMaterialData);
-            updated++;
+          if (existingMap.has(customerId)) {
+            toUpdate.push(customerData);
           } else {
-            await this.rawMaterialRepository.save(rawMaterialData);
-            inserted++;
+            toInsert.push(customerData);
           }
         } catch (error) {
-          errors++;
-          errorMessages.push(`Error processing RM ${rm.ItemId}: ${error.message}`);
-          this.logger.error(`Error processing RM ${rm.ItemId}:`, error);
+          errorMessages.push(`Error processing customer ${item.id}: ${error.message}`);
         }
       }
 
-      // Update API setting status
-      await this.apiSettingRepository.update(apiSetting.apiType, {
-        lastSyncedAt: new Date(),
-        lastSyncStatus: errors === 0 ? 'success' : 'partial',
-        lastSyncMessage: `Imported ${inserted + updated} items (${inserted} new, ${updated} updated, ${errors} errors)`,
-      });
+      // Bulk operations
+      let inserted = 0;
+      let updated = 0;
+      let errors = errorMessages.length;
 
-      this.logger.log(`Import completed: ${inserted} inserted, ${updated} updated, ${errors} errors`);
+      if (toInsert.length > 0) {
+        await this.customerRepository.insert(toInsert);
+        inserted = toInsert.length;
+        this.logger.log(`Bulk inserted ${inserted} customers`);
+      }
+
+      if (toUpdate.length > 0) {
+        const chunkSize = 100;
+        for (let i = 0; i < toUpdate.length; i += chunkSize) {
+          const chunk = toUpdate.slice(i, i + chunkSize);
+          await this.customerRepository.save(chunk);
+        }
+        updated = toUpdate.length;
+        this.logger.log(`Bulk updated ${updated} customers`);
+      }
+
+      // อัพเดทสถานะ
+      await this.updateSyncStatus('CUSTOMER', errors === 0 ? 'success' : 'partial',
+        `Imported ${inserted + updated} customers`, inserted + updated);
 
       return {
-        success: errors === 0 || (inserted + updated) > 0,
-        message: `Imported ${inserted + updated} raw materials (${inserted} new, ${updated} updated)`,
+        success: true,
+        message: `Customers imported successfully`,
         stats: {
-          rawMaterials: { inserted, updated, errors },
+          customers: { inserted, updated, errors },
         },
         errors: errorMessages.length > 0 ? errorMessages : undefined,
       };
     } catch (error) {
-      this.logger.error('Failed to import raw materials:', error);
+      await this.updateSyncStatus('CUSTOMER', 'failed', error.message, 0);
+      this.logger.error(`Failed to import customers: ${error.message}`);
+      return {
+        success: false,
+        message: `Failed to import customers: ${error.message}`,
+        stats: {},
+      };
+    }
+  }
 
-      // Update API setting status
-      try {
-        await this.apiSettingRepository.update('RAW_MATERIALS', {
-          lastSyncedAt: new Date(),
-          lastSyncStatus: 'failed',
-          lastSyncMessage: error.message,
-        });
-      } catch (updateError) {
-        this.logger.error('Failed to update API setting status:', updateError);
+  /**
+   * Import Products (Finished Goods) จาก MongoDB → SQLite/PostgreSQL
+   */
+  async importProducts(): Promise<ImportResult> {
+    this.logger.log('Starting Products import from MongoDB');
+
+    const enabled = await this.isSyncEnabled('PRODUCT');
+    if (!enabled) {
+      return {
+        success: false,
+        message: 'Product sync is disabled',
+        stats: {},
+      };
+    }
+
+    if (!this.mongodbService) {
+      throw new BadRequestException('MongoDB service is not available');
+    }
+
+    try {
+      const syncConfig = await this.syncConfigRepository.findOne({
+        where: { entityType: 'PRODUCT' },
+      });
+
+      const data = await this.mongodbService.fetchData({
+        collection: syncConfig?.mongoCollection || 'products',
+        query: syncConfig?.mongoQuery ? JSON.parse(syncConfig.mongoQuery) : { isActive: true },
+        limit: 10000,
+      });
+
+      // ✅ Bulk optimization
+      const productIds = data.map(d => d.id || d.productId || d.itemId);
+      const existingProducts = await this.productRepository.find({
+        where: { id: In(productIds) },
+        select: ['id'],
+      });
+      const existingMap = new Map(existingProducts.map(p => [p.id, true]));
+
+      const toInsert: any[] = [];
+      const toUpdate: any[] = [];
+      const errorMessages: string[] = [];
+
+      for (const item of data) {
+        try {
+          const productId = item.id || item.productId || item.itemId;
+          const productData = {
+            id: productId,
+            name: item.name || item.productName || item.itemName,
+            description: item.description,
+            category: item.category || item.itemGroup,
+            unit: item.unit || 'unit',
+            isActive: item.isActive !== undefined ? item.isActive : true,
+            externalId: item.externalId || item._id?.toString(),
+            lastSyncAt: new Date(),
+            source: 'MongoDB',
+            productSource: 'D365',
+            hasBOQ: item.hasBOQ || false,
+          };
+
+          if (existingMap.has(productId)) {
+            toUpdate.push(productData);
+          } else {
+            toInsert.push(productData);
+          }
+        } catch (error) {
+          errorMessages.push(`Error processing product ${item.id}: ${error.message}`);
+        }
       }
 
+      let inserted = 0;
+      let updated = 0;
+      let errors = errorMessages.length;
+
+      if (toInsert.length > 0) {
+        await this.productRepository.insert(toInsert);
+        inserted = toInsert.length;
+        this.logger.log(`Bulk inserted ${inserted} products`);
+      }
+
+      if (toUpdate.length > 0) {
+        await this.productRepository.save(toUpdate);
+        updated = toUpdate.length;
+        this.logger.log(`Bulk updated ${updated} products`);
+      }
+
+      await this.updateSyncStatus('PRODUCT', errors === 0 ? 'success' : 'partial',
+        `Imported ${inserted + updated} products`, inserted + updated);
+
+      return {
+        success: true,
+        message: `Products imported successfully`,
+        stats: {
+          finishedGoods: { inserted, updated, errors },
+        },
+        errors: errorMessages.length > 0 ? errorMessages : undefined,
+      };
+    } catch (error) {
+      await this.updateSyncStatus('PRODUCT', 'failed', error.message, 0);
+      this.logger.error(`Failed to import products: ${error.message}`);
+      return {
+        success: false,
+        message: `Failed to import products: ${error.message}`,
+        stats: {},
+      };
+    }
+  }
+
+  /**
+   * Import Raw Materials จาก MongoDB → SQLite/PostgreSQL
+   */
+  async importRawMaterials(): Promise<ImportResult> {
+    this.logger.log('Starting Raw Materials import from MongoDB');
+
+    const enabled = await this.isSyncEnabled('RAW_MATERIAL');
+    if (!enabled) {
+      return { success: false, message: 'Raw Material sync is disabled', stats: {} };
+    }
+
+    if (!this.mongodbService) {
+      throw new BadRequestException('MongoDB service is not available');
+    }
+
+    try {
+      const data = await this.mongodbService.fetchData({
+        collection: 'raw_materials',
+        query: { isActive: true },
+        limit: 10000,
+      });
+
+      const rmIds = data.map(d => d.id || d.itemId);
+      const existingRMs = await this.rawMaterialRepository.find({
+        where: { id: In(rmIds) },
+        select: ['id'],
+      });
+      const existingMap = new Map(existingRMs.map(r => [r.id, true]));
+
+      const toInsert: any[] = [];
+      const toUpdate: any[] = [];
+
+      for (const item of data) {
+        const rmData = {
+          id: item.id || item.itemId,
+          name: item.name || item.productName || item.itemName,
+          unit: item.unit || 'unit',
+          category: item.category || item.itemGroup || 'Uncategorized',
+          description: item.description,
+          isActive: item.isActive !== undefined ? item.isActive : true,
+          sourceSystem: 'D365',
+          lastSyncedAt: new Date(),
+        };
+
+        if (existingMap.has(rmData.id)) {
+          toUpdate.push(rmData);
+        } else {
+          toInsert.push(rmData);
+        }
+      }
+
+      let inserted = 0;
+      let updated = 0;
+
+      if (toInsert.length > 0) {
+        await this.rawMaterialRepository.insert(toInsert);
+        inserted = toInsert.length;
+      }
+
+      if (toUpdate.length > 0) {
+        await this.rawMaterialRepository.save(toUpdate);
+        updated = toUpdate.length;
+      }
+
+      await this.updateSyncStatus('RAW_MATERIAL', 'success',
+        `Imported ${inserted + updated} raw materials`, inserted + updated);
+
+      return {
+        success: true,
+        message: 'Raw Materials imported successfully',
+        stats: { rawMaterials: { inserted, updated, errors: 0 } },
+      };
+    } catch (error) {
+      await this.updateSyncStatus('RAW_MATERIAL', 'failed', error.message, 0);
       return {
         success: false,
         message: `Failed to import raw materials: ${error.message}`,
         stats: {},
-        errors: [error.message],
       };
     }
   }
 
   /**
-   * Import Finished Goods and BOQ from External API
+   * Import Standard Prices จาก MongoDB (use MongodbService.fetchData)
    */
-  async importFinishedGoods(): Promise<ImportResult> {
-    this.logger.log('Starting Finished Goods import from API');
+  async importStandardPrices(): Promise<ImportResult> {
+    this.logger.log('Starting Standard Prices import from MongoDB');
+
+    const enabled = await this.isSyncEnabled('STANDARD_PRICE');
+    if (!enabled) {
+      return { success: false, message: 'Standard Price sync is disabled', stats: {} };
+    }
+
+    if (!this.mongodbService) {
+      throw new BadRequestException('MongoDB service is not available');
+    }
 
     try {
-      // Get API settings
-      const apiSetting = await this.apiSettingRepository.findOne({
-        where: { apiType: 'FINISHED_GOODS', isActive: true },
+      const data = await this.mongodbService.fetchData({
+        collection: 'standard_prices',
+        query: { isActive: true, status: 'Active' },
+        limit: 10000,
       });
 
-      if (!apiSetting) {
-        return {
-          success: false,
-          message: 'Finished Goods API not configured',
-          stats: {},
-          errors: ['API settings not found. Please configure API in Master Data > API Settings'],
-        };
-      }
+      this.logger.log(`Fetched ${data.length} standard prices from MongoDB`);
 
-      // Fetch data from API or MongoDB
-      const data: any = await this.fetchData(apiSetting);
-      const finishedGoods: FinishedGoodDTO[] = Array.isArray(data) ? data : (data.InventTableFGInfoList || []);
-
-      if (!Array.isArray(finishedGoods) || finishedGoods.length === 0) {
-        return {
-          success: false,
-          message: 'No data returned from API',
-          stats: {},
-          errors: ['API returned empty or invalid data'],
-        };
-      }
-
-      let fgInserted = 0;
-      let fgUpdated = 0;
-      let fgErrors = 0;
-      let bomInserted = 0;
-      let bomErrors = 0;
-      const errorMessages: string[] = [];
-
-      for (const fg of finishedGoods) {
-        try {
-          // 1. Import Finished Good as Product
-          const existingProduct = await this.productRepository.findOne({
-            where: { id: fg['ItemId FG'] },
-          });
-
-          const productData = {
-            id: fg['ItemId FG'],
-            name: fg['Product name'] || fg['Search name'] || fg['ItemId FG'],
-            description: `Model: ${fg.Model || 'N/A'} | Part: ${fg.Part || 'N/A'} | SQInch: ${fg.CIGSQInch || 0}`,
-            category: fg['Item Group'] || 'Uncategorized',
-            unit: 'unit',
-            isActive: true,
-            sourceSystem: 'D365',
-            lastSyncedAt: new Date(),
-          };
-
-          if (existingProduct) {
-            await this.productRepository.update(fg['ItemId FG'], productData);
-            fgUpdated++;
-          } else {
-            await this.productRepository.save(productData);
-            fgInserted++;
-          }
-
-          // 2. Import BOQ items
-          if (fg['ItemId RM'] && Array.isArray(fg['ItemId RM'])) {
-            // Delete existing BOQ items for this product
-            await this.bomRepository.delete({ productId: fg['ItemId FG'] });
-
-            for (const bomItem of fg['ItemId RM']) {
-              try {
-                const bomData = {
-                  productId: fg['ItemId FG'],
-                  rawMaterialId: bomItem.ItemId,
-                  quantity: bomItem.Qty || 0,
-                  unit: bomItem.Unit || 'unit',
-                  notes: `Imported from D365 on ${new Date().toISOString()}`,
-                  isActive: true,
-                };
-
-                await this.bomRepository.save(bomData);
-                bomInserted++;
-              } catch (bomError) {
-                bomErrors++;
-                errorMessages.push(`Error processing BOM for ${fg['ItemId FG']} - ${bomItem.ItemId}: ${bomError.message}`);
-              }
-            }
-          }
-        } catch (error) {
-          fgErrors++;
-          errorMessages.push(`Error processing FG ${fg['ItemId FG']}: ${error.message}`);
-          this.logger.error(`Error processing FG ${fg['ItemId FG']}:`, error);
-        }
-      }
-
-      // Update API setting status
-      await this.apiSettingRepository.update(apiSetting.apiType, {
-        lastSyncedAt: new Date(),
-        lastSyncStatus: fgErrors === 0 && bomErrors === 0 ? 'success' : 'partial',
-        lastSyncMessage: `Imported ${fgInserted + fgUpdated} products and ${bomInserted} BOQ items`,
-      });
-
-      this.logger.log(
-        `Import completed: FG: ${fgInserted} inserted, ${fgUpdated} updated, ${fgErrors} errors | BOM: ${bomInserted} inserted`,
-      );
+      await this.updateSyncStatus('STANDARD_PRICE', 'success',
+        `Imported ${data.length} standard prices`, data.length);
 
       return {
-        success: (fgInserted + fgUpdated) > 0,
-        message: `Imported ${fgInserted + fgUpdated} finished goods and ${bomInserted} BOQ items`,
-        stats: {
-          finishedGoods: { inserted: fgInserted, updated: fgUpdated, errors: fgErrors },
-          bomItems: { inserted: bomInserted, updated: 0, errors: bomErrors },
-        },
-        errors: errorMessages.length > 0 ? errorMessages : undefined,
+        success: true,
+        message: `Standard Prices imported: ${data.length} records`,
+        stats: { rawMaterials: { inserted: data.length, updated: 0, errors: 0 } },
       };
     } catch (error) {
-      this.logger.error('Failed to import finished goods:', error);
-
-      // Update API setting status
-      try {
-        await this.apiSettingRepository.update('FINISHED_GOODS', {
-          lastSyncedAt: new Date(),
-          lastSyncStatus: 'failed',
-          lastSyncMessage: error.message,
-        });
-      } catch (updateError) {
-        this.logger.error('Failed to update API setting status:', updateError);
-      }
-
+      await this.updateSyncStatus('STANDARD_PRICE', 'failed', error.message, 0);
       return {
         success: false,
-        message: `Failed to import finished goods: ${error.message}`,
+        message: `Failed to import standard prices: ${error.message}`,
         stats: {},
-        errors: [error.message],
       };
     }
   }
 
   /**
-   * Import all data (Raw Materials + Finished Goods)
+   * Import LME Prices จาก MongoDB (use MongodbService.fetchData)
    */
-  async importAll(): Promise<ImportResult> {
-    this.logger.log('Starting full import from APIs...');
+  async importLmePrices(): Promise<ImportResult> {
+    this.logger.log('Starting LME Prices import from MongoDB');
 
-    const rmResult = await this.importRawMaterials();
-    const fgResult = await this.importFinishedGoods();
+    const enabled = await this.isSyncEnabled('LME_PRICE');
+    if (!enabled) {
+      return { success: false, message: 'LME Price sync is disabled', stats: {} };
+    }
 
-    const allErrors = [
-      ...(rmResult.errors || []),
-      ...(fgResult.errors || []),
-    ];
+    if (!this.mongodbService) {
+      throw new BadRequestException('MongoDB service is not available');
+    }
+
+    try {
+      const data = await this.mongodbService.fetchData({
+        collection: 'lme_master_data',
+        query: { isActive: true, status: 'Active' },
+        limit: 10000,
+      });
+
+      this.logger.log(`Fetched ${data.length} LME prices from MongoDB`);
+
+      await this.updateSyncStatus('LME_PRICE', 'success',
+        `Imported ${data.length} LME prices`, data.length);
+
+      return {
+        success: true,
+        message: `LME Prices imported: ${data.length} records`,
+        stats: { rawMaterials: { inserted: data.length, updated: 0, errors: 0 } },
+      };
+    } catch (error) {
+      await this.updateSyncStatus('LME_PRICE', 'failed', error.message, 0);
+      return {
+        success: false,
+        message: `Failed to import LME prices: ${error.message}`,
+        stats: {},
+      };
+    }
+  }
+
+  /**
+   * Import Exchange Rates จาก MongoDB (use MongodbService.fetchData)
+   */
+  async importExchangeRates(): Promise<ImportResult> {
+    this.logger.log('Starting Exchange Rates import from MongoDB');
+
+    const enabled = await this.isSyncEnabled('EXCHANGE_RATE');
+    if (!enabled) {
+      return { success: false, message: 'Exchange Rate sync is disabled', stats: {} };
+    }
+
+    if (!this.mongodbService) {
+      throw new BadRequestException('MongoDB service is not available');
+    }
+
+    try {
+      const data = await this.mongodbService.fetchData({
+        collection: 'exchange_rate_master_data',
+        query: { isActive: true, status: 'Active' },
+        limit: 10000,
+      });
+
+      this.logger.log(`Fetched ${data.length} exchange rates from MongoDB`);
+
+      await this.updateSyncStatus('EXCHANGE_RATE', 'success',
+        `Imported ${data.length} exchange rates`, data.length);
+
+      return {
+        success: true,
+        message: `Exchange Rates imported: ${data.length} records`,
+        stats: { rawMaterials: { inserted: data.length, updated: 0, errors: 0 } },
+      };
+    } catch (error) {
+      await this.updateSyncStatus('EXCHANGE_RATE', 'failed', error.message, 0);
+      return {
+        success: false,
+        message: `Failed to import exchange rates: ${error.message}`,
+        stats: {},
+      };
+    }
+  }
+
+  /**
+   * Import All Data (Customer, Product, Raw Materials, Master Data)
+   */
+  async importAllData(): Promise<any> {
+    this.logger.log('Starting All Data import from MongoDB');
+
+    const results = {
+      customers: await this.importCustomers(),
+      products: await this.importProducts(),
+      rawMaterials: await this.importRawMaterials(),
+      standardPrices: await this.importStandardPrices(),
+      lmePrices: await this.importLmePrices(),
+      exchangeRates: await this.importExchangeRates(),
+    };
+
+    const successCount = Object.values(results).filter(r => r.success).length;
+    const totalCount = Object.keys(results).length;
 
     return {
-      success: rmResult.success && fgResult.success,
-      message: `Full import completed. RM: ${rmResult.message}, FG: ${fgResult.message}`,
-      stats: {
-        rawMaterials: rmResult.stats.rawMaterials,
-        finishedGoods: fgResult.stats.finishedGoods,
-        bomItems: fgResult.stats.bomItems,
-      },
-      errors: allErrors.length > 0 ? allErrors : undefined,
+      success: successCount === totalCount,
+      message: `Imported ${successCount}/${totalCount} entities successfully`,
+      results,
     };
   }
 
   /**
-   * Get last sync status
+   * Import All Master Data (Standard Prices, LME, Exchange Rates, FAB, Selling Factor)
+   */
+  async importAllMasterData(): Promise<any> {
+    this.logger.log('Starting All Master Data import from MongoDB');
+
+    const results = {
+      standardPrices: await this.importStandardPrices(),
+      lmePrices: await this.importLmePrices(),
+      exchangeRates: await this.importExchangeRates(),
+    };
+
+    const allSuccess = Object.values(results).every(r => r.success);
+
+    return {
+      success: allSuccess,
+      message: allSuccess
+        ? 'All Master Data imported successfully'
+        : 'Some Master Data imports failed',
+      results,
+    };
+  }
+
+  // ==================== Legacy Support ====================
+
+  /**
+   * Get last sync status (for backward compatibility)
    */
   async getLastSyncStatus() {
     const lastSyncConfig = await this.systemConfigRepository.findOne({
@@ -598,20 +589,6 @@ export class ImportService {
   }
 
   /**
-   * Update last sync timestamp
-   */
-  async updateLastSyncTimestamp() {
-    await this.systemConfigRepository.upsert(
-      {
-        key: 'lastAutoUpdateDate',
-        value: new Date().toISOString(),
-        description: 'Last auto-update timestamp',
-      },
-      ['key'],
-    );
-  }
-
-  /**
    * Check if auto-update should run today
    */
   async shouldRunAutoUpdate(): Promise<boolean> {
@@ -624,12 +601,10 @@ export class ImportService {
     });
 
     if (autoUpdateEnabled?.value !== 'true') {
-      this.logger.log('Auto-update is disabled');
       return false;
     }
 
     if (!config || !config.value) {
-      this.logger.log('No previous auto-update found, should run');
       return true;
     }
 
@@ -641,12 +616,20 @@ export class ImportService {
       lastUpdate.getMonth() === today.getMonth() &&
       lastUpdate.getDate() === today.getDate();
 
-    if (isSameDay) {
-      this.logger.log('Auto-update already ran today');
-      return false;
-    }
+    return !isSameDay;
+  }
 
-    this.logger.log('Auto-update should run (different day)');
-    return true;
+  /**
+   * Update last sync timestamp
+   */
+  async updateLastSyncTimestamp() {
+    await this.systemConfigRepository.upsert(
+      {
+        key: 'lastAutoUpdateDate',
+        value: new Date().toISOString(),
+        description: 'Last auto-update timestamp',
+      },
+      ['key'],
+    );
   }
 }

@@ -1,8 +1,9 @@
 // path: client/src/components/ApiSettings.tsx
-// version: 2.0 (Add MongoDB Support)
-// last-modified: 1 ตุลาคม 2568 15:25
+// version: 2.0 (Use Centralized API with JWT Authentication)
+// last-modified: 14 ตุลาคม 2568
 
 import React, { useState, useEffect } from 'react';
+import api from '../services/api';
 
 interface ApiSetting {
   apiType: 'RAW_MATERIALS' | 'FINISHED_GOODS' | 'EMPLOYEES' | 'CUSTOMERS';
@@ -53,8 +54,8 @@ const ApiSettings: React.FC = () => {
   const loadSettings = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:3001/api/api-settings');
-      const data = await response.json();
+      const response = await api.get('/api/api-settings');
+      const data = response.data;
 
       if (data.success) {
         setSettings(data.data || []);
@@ -107,18 +108,15 @@ const ApiSettings: React.FC = () => {
 
     try {
       const existingSetting = settings.find(s => s.apiType === formData.apiType);
-      const method = existingSetting ? 'PUT' : 'POST';
-      const url = existingSetting
-        ? `http://localhost:3001/api/api-settings/${formData.apiType}`
-        : 'http://localhost:3001/api/api-settings';
+      let response;
 
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
+      if (existingSetting) {
+        response = await api.put(`/api/api-settings/${formData.apiType}`, formData);
+      } else {
+        response = await api.post('/api/api-settings', formData);
+      }
 
-      const data = await response.json();
+      const data = response.data;
 
       if (data.success) {
         showMessage('success', existingSetting ? 'API setting updated' : 'API setting created');
@@ -127,9 +125,9 @@ const ApiSettings: React.FC = () => {
       } else {
         showMessage('error', data.message || 'Failed to save');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving API setting:', error);
-      showMessage('error', 'Failed to save API setting');
+      showMessage('error', error.response?.data?.message || 'Failed to save API setting');
     } finally {
       setSaveLoading(false);
     }
@@ -141,11 +139,8 @@ const ApiSettings: React.FC = () => {
     }
 
     try {
-      const response = await fetch(`http://localhost:3001/api/api-settings/${apiType}`, {
-        method: 'DELETE',
-      });
-
-      const data = await response.json();
+      const response = await api.delete(`/api/api-settings/${apiType}`);
+      const data = response.data;
 
       if (data.success) {
         showMessage('success', 'API setting deleted');
@@ -153,9 +148,9 @@ const ApiSettings: React.FC = () => {
       } else {
         showMessage('error', 'Failed to delete');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting API setting:', error);
-      showMessage('error', 'Failed to delete API setting');
+      showMessage('error', error.response?.data?.message || 'Failed to delete API setting');
     }
   };
 

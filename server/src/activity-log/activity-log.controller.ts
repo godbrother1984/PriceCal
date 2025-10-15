@@ -1,11 +1,13 @@
 // path: server/src/activity-log/activity-log.controller.ts
-// version: 1.0 (Activity Log Controller)
-// last-modified: 29 กันยายน 2568 16:55
+// version: 2.0 (Add JWT Authentication Guard)
+// last-modified: 14 ตุลาคม 2568 15:40
 
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ActivityLogService } from './activity-log.service';
 
 @Controller('api/activity-logs')
+@UseGuards(JwtAuthGuard)
 export class ActivityLogController {
   constructor(private readonly activityLogService: ActivityLogService) {}
 

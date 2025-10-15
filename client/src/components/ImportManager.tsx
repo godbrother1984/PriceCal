@@ -1,8 +1,9 @@
 // path: client/src/components/ImportManager.tsx
-// version: 1.0 (Master Data Import Manager UI)
-// last-modified: 1 ตุลาคม 2568 10:30
+// version: 2.1 (MongoDB Sync - Update Descriptions)
+// last-modified: 14 ตุลาคม 2568 16:10
 
 import React, { useState, useEffect } from 'react';
+import api from '../services/api';
 
 interface ImportStats {
   rawMaterials?: { inserted: number; updated: number; errors: number };
@@ -38,8 +39,8 @@ const ImportManager: React.FC = () => {
 
   const loadImportStatus = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/import/status');
-      const data = await response.json();
+      const response = await api.get('/api/import/status');
+      const data = response.data;
 
       if (data.success && data.data) {
         setStatus(data.data);
@@ -54,21 +55,15 @@ const ImportManager: React.FC = () => {
     setResult(null);
 
     try {
-      const response = await fetch('http://localhost:3001/api/import/all', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      const data = await response.json();
+      const response = await api.post('/api/import/all');
+      const data = response.data;
       setResult(data);
 
       if (data.success) {
         await loadImportStatus();
       }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
       setResult({
         success: false,
         message: `Failed to import: ${errorMessage}`,
@@ -84,21 +79,15 @@ const ImportManager: React.FC = () => {
     setResult(null);
 
     try {
-      const response = await fetch('http://localhost:3001/api/import/raw-materials', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      const data = await response.json();
+      const response = await api.post('/api/import/raw-materials');
+      const data = response.data;
       setResult(data);
 
       if (data.success) {
         await loadImportStatus();
       }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
       setResult({
         success: false,
         message: `Failed to import: ${errorMessage}`,
@@ -114,21 +103,15 @@ const ImportManager: React.FC = () => {
     setResult(null);
 
     try {
-      const response = await fetch('http://localhost:3001/api/import/finished-goods', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      const data = await response.json();
+      const response = await api.post('/api/import/finished-goods');
+      const data = response.data;
       setResult(data);
 
       if (data.success) {
         await loadImportStatus();
       }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
       setResult({
         success: false,
         message: `Failed to import: ${errorMessage}`,
@@ -183,12 +166,12 @@ const ImportManager: React.FC = () => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <div className="text-sm text-blue-800">
-              <p className="font-medium mb-1">การนำเข้าข้อมูล:</p>
+              <p className="font-medium mb-1">📊 MongoDB Sync:</p>
               <ul className="list-disc list-inside space-y-1 ml-2">
-                <li>ระบบจะดึงข้อมูลจาก <strong>External API</strong> ที่ตั้งค่าไว้</li>
-                <li>กรุณาตั้งค่า API ใน <strong>🔌 API Settings</strong> ก่อนทำ Import</li>
-                <li>Raw Materials: ดึงจาก Raw Materials API</li>
-                <li>Finished Goods + BOQ: ดึงจาก Finished Goods API</li>
+                <li>ระบบจะดึงข้อมูล Master Data จาก <strong>MongoDB</strong> ที่เชื่อมต่อไว้</li>
+                <li>รองรับการ Import: <strong>Raw Materials</strong>, <strong>Finished Goods</strong>, <strong>BOQ</strong>, และ <strong>Customers</strong></li>
+                <li>ข้อมูลจะถูกอัปเดตอัตโนมัติเมื่อมีการเปลี่ยนแปลงใน MongoDB (ถ้าเปิด Auto-Update)</li>
+                <li>สามารถ Import แบบ Manual ได้ทันทีด้วยปุ่มด้านล่าง</li>
               </ul>
             </div>
           </div>

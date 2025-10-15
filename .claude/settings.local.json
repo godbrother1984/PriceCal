@@ -30,7 +30,10 @@
       "Bash(sqlite3:*)",
       "Bash(cat:*)",
       "Bash(tasklist)",
-      "Bash(del database.sqlite)"
+      "Bash(del database.sqlite)",
+      "Bash(del \"c:\\Project\\PriceCal\\server\\src\\entities\\master-pricing.entity.ts\")",
+      "Bash(test:*)",
+      "Bash(npm run test)"
     ]
   }
 }

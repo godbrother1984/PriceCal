@@ -28,7 +28,7 @@ const App: React.FC = () => {
 
         // ถ้าไม่มีใน localStorage ให้ตรวจสอบจาก Backend
         console.log('[App] Checking setup status from backend...');
-        const response = await fetch('http://localhost:3001/setup/status');
+        const response = await fetch('http://localhost:3000/setup/status');
         
         if (response.ok) {
           const data = await response.json();

@@ -1,12 +1,15 @@
 // path: server/src/api-settings/api-settings.controller.ts
-// version: 1.0 (API Settings Controller)
-// last-modified: 1 ตุลาคม 2568 11:50
+// version: 2.0 (Add JWT Authentication Guard - DEPRECATED)
+// last-modified: 14 ตุลาคม 2568 15:45
+// NOTE: This controller is deprecated as API import is no longer used
 
-import { Controller, Get, Post, Put, Delete, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ApiSettingsService } from './api-settings.service';
 import { ApiType } from '../entities/api-setting.entity';
 
 @Controller('api/api-settings')
+@UseGuards(JwtAuthGuard)
 export class ApiSettingsController {
   constructor(private readonly apiSettingsService: ApiSettingsService) {}
 

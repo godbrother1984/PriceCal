@@ -1,8 +1,9 @@
 // path: client/src/components/ActivityLogs.tsx
-// version: 1.0 (Activity Logs Component)
-// last-modified: 29 กันยายน 2568 17:30
+// version: 2.0 (Use Centralized API with JWT Authentication)
+// last-modified: 14 ตุลาคม 2568 17:00
 
 import React, { useState, useEffect } from 'react';
+import api from '../services/api'; // ✅ ใช้ centralized api instance ที่มี JWT interceptor
 
 // --- Types ---
 interface ActivityLog {
@@ -75,21 +76,17 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({ requestId, title = 'Activit
   const loadLogs = async () => {
     try {
       setLoading(true);
-      const url = requestId
-        ? `http://localhost:3001/api/activity-logs/request/${requestId}`
-        : 'http://localhost:3001/api/activity-logs';
+      const endpoint = requestId
+        ? `/api/activity-logs/request/${requestId}`
+        : '/api/activity-logs';
 
-      const response = await fetch(url);
+      // ✅ ใช้ api.get() แทน fetch() เพื่อแนบ JWT token อัตโนมัติ
+      const response = await api.get(endpoint);
+      console.log('Activity logs response:', response.data);
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch logs: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      console.log('Activity logs response:', data);
-
-      if (data.success && Array.isArray(data.data)) {
-        setLogs(data.data);
+      // axios response.data contains the response body already parsed
+      if (response.data.success && Array.isArray(response.data.data)) {
+        setLogs(response.data.data);
       } else {
         setError('Invalid response format');
       }

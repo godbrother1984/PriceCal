@@ -1,33 +1,15 @@
 // path: client/src/pages/MasterData.tsx
-// version: 3.8 (Update Customer Groups - Remove type, Add isDefault)
-// last-modified: 1 ตุลาคม 2568 18:35
+// version: 5.1 (Add BOQ Management Tab)
+// last-modified: 14 ตุลาคม 2568 16:30
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import axios from 'axios';
+import api from '../services/api'; // ✅ ใช้ centralized api instance ที่มี JWT interceptor
 import ActivityLogs from '../components/ActivityLogs';
 import ImportManager from '../components/ImportManager';
 import MasterDataViewer from '../components/MasterDataViewer';
-
-// --- API Configuration ---
-const api = axios.create({
-  baseURL: 'http://localhost:3001',
-  timeout: 10000,
-});
-
-// Add response interceptor to handle API responses consistently
-api.interceptors.response.use(
-  (response) => {
-    if (response.data?.success && response.data?.data !== undefined) {
-      return { ...response, data: response.data.data };
-    }
-    return response;
-  },
-  (error) => {
-    console.error('API Error:', error);
-    return Promise.reject(error);
-  }
-);
+import BOQViewer from '../components/BOQViewer';
+import BOQEditor from '../components/BOQEditor';
 
 // --- Types ---
 interface Column {
@@ -1838,60 +1820,174 @@ const ExchangeRates: React.FC = () => {
 };
 
 
+// --- Tab Group Component ---
+interface SubTab {
+  id: string;
+  label: string;
+  component: React.FC;
+}
+
+interface TabGroup {
+  id: string;
+  label: string;
+  icon: string;
+  subTabs?: SubTab[];
+  component?: React.FC;
+}
+
 // --- Main MasterData Component ---
 const MasterData: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('import');
+  const [activeTab, setActiveTab] = useState('mongodb');
+  const [activeSubTab, setActiveSubTab] = useState<string>('');
 
-  const tabs = [
-    { id: 'import', label: '📥 Import Data', component: ImportManager },
-    { id: 'viewData', label: '📊 View Data', component: MasterDataViewer },
-    { id: 'currencies', label: 'Currencies', component: Currencies },
-    { id: 'customerGroups', label: 'Customer Groups', component: CustomerGroups },
-    { id: 'customerMappings', label: 'Customer Mappings', component: CustomerMappings },
-    { id: 'fabCost', label: 'Fab Cost', component: FabCost },
-    { id: 'standardPrices', label: 'Standard Prices', component: StandardPrices },
-    { id: 'sellingFactors', label: 'Selling Factors', component: SellingFactors },
-    { id: 'lmePrices', label: 'LME Prices', component: LmePrices },
-    { id: 'exchangeRates', label: 'Exchange Rates', component: ExchangeRates },
-    { id: 'activityLogs', label: 'Activity Logs', component: () => <ActivityLogs title="Activity Logs ทั้งหมด" /> },
+  // ✅ โครงสร้างใหม่: 7 กลุ่มหลัก พร้อม sub-tabs (เพิ่ม BOQ Management)
+  const tabGroups: TabGroup[] = [
+    {
+      id: 'mongodb',
+      label: '🔄 MongoDB Sync',
+      icon: '🔄',
+      subTabs: [
+        { id: 'import', label: 'Import Data', component: ImportManager },
+        { id: 'viewData', label: 'View MongoDB Data', component: MasterDataViewer },
+      ]
+    },
+    {
+      id: 'boq',
+      label: '📋 BOQ Management',
+      icon: '📋',
+      subTabs: [
+        { id: 'viewBOQ', label: 'View BOQ', component: BOQViewer },
+        { id: 'editBOQ', label: 'Create/Edit BOQ', component: BOQEditor },
+      ]
+    },
+    {
+      id: 'customers',
+      label: '👥 Customers',
+      icon: '👥',
+      subTabs: [
+        { id: 'customerGroups', label: 'Customer Groups', component: CustomerGroups },
+        { id: 'customerMappings', label: 'Customer Mappings', component: CustomerMappings },
+      ]
+    },
+    {
+      id: 'pricing',
+      label: '💰 Pricing Master',
+      icon: '💰',
+      subTabs: [
+        { id: 'standardPrices', label: 'Standard Prices', component: StandardPrices },
+        { id: 'fabCost', label: 'Fab Costs', component: FabCost },
+        { id: 'sellingFactors', label: 'Selling Factors', component: SellingFactors },
+      ]
+    },
+    {
+      id: 'market',
+      label: '💱 Market Data',
+      icon: '💱',
+      subTabs: [
+        { id: 'lmePrices', label: 'LME Master Data', component: LmePrices },
+        { id: 'exchangeRates', label: 'Exchange Rates', component: ExchangeRates },
+      ]
+    },
+    {
+      id: 'system',
+      label: '⚙️ System Config',
+      icon: '⚙️',
+      component: Currencies, // Single component, no sub-tabs
+    },
+    {
+      id: 'logs',
+      label: '📊 Activity Logs',
+      icon: '📊',
+      component: () => <ActivityLogs title="Activity Logs ทั้งหมด" />,
+    },
   ];
 
+  // Initialize activeSubTab when activeTab changes
+  React.useEffect(() => {
+    const currentGroup = tabGroups.find(g => g.id === activeTab);
+    if (currentGroup?.subTabs && currentGroup.subTabs.length > 0) {
+      setActiveSubTab(currentGroup.subTabs[0].id);
+    } else {
+      setActiveSubTab('');
+    }
+  }, [activeTab]);
+
   const renderContent = () => {
-    const activeTabData = tabs.find(tab => tab.id === activeTab);
-    if (activeTabData) {
-      const Component = activeTabData.component;
+    const activeGroup = tabGroups.find(g => g.id === activeTab);
+    if (!activeGroup) return <div className="text-center py-8 text-slate-500">Select a category</div>;
+
+    // If group has sub-tabs, render active sub-tab component
+    if (activeGroup.subTabs) {
+      const activeSubTabData = activeGroup.subTabs.find(st => st.id === activeSubTab);
+      if (activeSubTabData) {
+        const Component = activeSubTabData.component;
+        return <Component key={activeSubTab} />;
+      }
+    }
+
+    // Otherwise render group component directly
+    if (activeGroup.component) {
+      const Component = activeGroup.component;
       return <Component key={activeTab} />;
     }
-    return <div className="text-center py-8 text-slate-500">Select a category</div>;
+
+    return <div className="text-center py-8 text-slate-500">No content available</div>;
   };
+
+  const activeGroup = tabGroups.find(g => g.id === activeTab);
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 mb-2">Master Data Management</h1>
           <p className="text-slate-600">Manage all master data for the pricing system.</p>
         </div>
       </div>
-      
+
+      {/* Primary Tabs (Main Groups) */}
       <div className="border-b border-slate-200">
-        <nav className="-mb-px flex space-x-8" aria-label="Tabs" style={{overflowX: 'auto'}}>
-          {tabs.map(tab => (
+        <nav className="-mb-px flex space-x-6" aria-label="Main Tabs">
+          {tabGroups.map(group => (
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              key={group.id}
+              onClick={() => setActiveTab(group.id)}
               className={`${
-                activeTab === tab.id
-                  ? 'border-blue-500 text-blue-600' 
+                activeTab === group.id
+                  ? 'border-blue-500 text-blue-600 font-semibold'
                   : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-              } whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm transition-colors`}
+              } whitespace-nowrap py-3 px-2 border-b-2 text-sm transition-colors flex items-center gap-2`}
             >
-              {tab.label}
+              <span className="text-lg">{group.icon}</span>
+              <span>{group.label}</span>
             </button>
           ))}
         </nav>
       </div>
-      
+
+      {/* Secondary Tabs (Sub-tabs) */}
+      {activeGroup?.subTabs && activeGroup.subTabs.length > 0 && (
+        <div className="bg-slate-50 rounded-lg p-2">
+          <nav className="flex space-x-2" aria-label="Sub Tabs">
+            {activeGroup.subTabs.map(subTab => (
+              <button
+                key={subTab.id}
+                onClick={() => setActiveSubTab(subTab.id)}
+                className={`${
+                  activeSubTab === subTab.id
+                    ? 'bg-white text-blue-600 font-medium shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                } px-4 py-2 rounded-md text-sm transition-all`}
+              >
+                {subTab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+      )}
+
+      {/* Content */}
       <div className="mt-6">
         {renderContent()}
       </div>

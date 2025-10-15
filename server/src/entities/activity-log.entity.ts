@@ -10,6 +10,7 @@ export type ActivityType =
   | 'REQUEST_CREATED'
   | 'STATUS_CHANGED'
   | 'CALCULATION_COMPLETED'
+  | 'PRICE_CALCULATED'
   | 'APPROVAL_REQUESTED'
   | 'APPROVED'
   | 'REJECTED'
@@ -17,7 +18,11 @@ export type ActivityType =
   | 'BOQ_UPDATED'
   | 'SPECIAL_REQUEST_ADDED'
   | 'SPECIAL_REQUEST_UPDATED'
-  | 'SPECIAL_REQUEST_REMOVED';
+  | 'SPECIAL_REQUEST_REMOVED'
+  | 'MASTER_DATA_CREATED'
+  | 'MASTER_DATA_UPDATED'
+  | 'MASTER_DATA_APPROVED'
+  | 'MASTER_DATA_DELETED';
 
 @Entity('activity_logs')
 export class ActivityLog {

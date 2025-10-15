@@ -1,13 +1,13 @@
 // path: client/src/pages/UserProfile.tsx
-// version: 1.1 (Remove Mock Data and Add API Integration)
-// last-modified: 1 ตุลาคม 2568 14:50
+// version: 2.1 (Fix TypeScript Warning - Remove Unused Loading State)
+// last-modified: 14 ตุลาคม 2568 15:45
 
 import React, { useState, useEffect } from 'react';
+import api from '../services/api';
 
 const UserProfile: React.FC = () => {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [profile, setProfile] = useState({
     username: '',
@@ -37,37 +37,29 @@ const UserProfile: React.FC = () => {
   const loadProfile = async () => {
     try {
       // TODO: เรียก API เพื่อดึงข้อมูล profile
-      // const response = await fetch('http://localhost:3001/api/auth/profile');
-      // if (response.ok) {
-      //   const data = await response.json();
-      //   setProfile(data);
+      // const response = await api.get('/api/auth/profile');
+      // if (response.data.success) {
+      //   setProfile(response.data.data);
       // }
-      setLoading(false);
     } catch (error) {
       console.error('Failed to load profile:', error);
-      setLoading(false);
     }
   };
 
   const handleSaveProfile = async () => {
     setSaving(true);
     try {
-      // TODO: เรียก API เพื่ออัปเดต profile
-      const response = await fetch('http://localhost:3001/api/auth/profile', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(profile),
-      });
+      const response = await api.put('/api/auth/profile', profile);
 
-      if (response.ok) {
+      if (response.data.success) {
         alert('บันทึกข้อมูลส่วนตัวเรียบร้อย');
         setIsEditingProfile(false);
       } else {
         alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save profile:', error);
-      alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+      alert(error.response?.data?.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
     } finally {
       setSaving(false);
     }
@@ -85,26 +77,21 @@ const UserProfile: React.FC = () => {
 
     setSaving(true);
     try {
-      const response = await fetch('http://localhost:3001/api/auth/change-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          currentPassword: passwordData.currentPassword,
-          newPassword: passwordData.newPassword,
-        }),
+      const response = await api.post('/api/auth/change-password', {
+        currentPassword: passwordData.currentPassword,
+        newPassword: passwordData.newPassword,
       });
 
-      if (response.ok) {
+      if (response.data.success) {
         alert('เปลี่ยนรหัสผ่านเรียบร้อย');
         setIsChangingPassword(false);
         setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
       } else {
-        const error = await response.json();
-        alert(error.message || 'เกิดข้อผิดพลาดในการเปลี่ยนรหัสผ่าน');
+        alert(response.data.message || 'เกิดข้อผิดพลาดในการเปลี่ยนรหัสผ่าน');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to change password:', error);
-      alert('เกิดข้อผิดพลาดในการเปลี่ยนรหัสผ่าน');
+      alert(error.response?.data?.message || 'เกิดข้อผิดพลาดในการเปลี่ยนรหัสผ่าน');
     } finally {
       setSaving(false);
     }
@@ -113,23 +100,19 @@ const UserProfile: React.FC = () => {
   const handleSavePreferences = async () => {
     setSaving(true);
     try {
-      const response = await fetch('http://localhost:3001/api/data/system-config/userPreferences', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          value: JSON.stringify(preferences),
-          description: 'User preferences',
-        }),
+      const response = await api.put('/api/data/system-config/userPreferences', {
+        value: JSON.stringify(preferences),
+        description: 'User preferences',
       });
 
-      if (response.ok) {
+      if (response.data.success) {
         alert('บันทึก Preferences เรียบร้อย');
       } else {
         alert('เกิดข้อผิดพลาดในการบันทึก');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save preferences:', error);
-      alert('เกิดข้อผิดพลาดในการบันทึก');
+      alert(error.response?.data?.message || 'เกิดข้อผิดพลาดในการบันทึก');
     } finally {
       setSaving(false);
     }

@@ -1,11 +1,13 @@
 import { Module, OnModuleInit } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { ImportModule } from './import/import.module';
 import { ApiSettingsModule } from './api-settings/api-settings.module';
 import { MongodbModule } from './mongodb/mongodb.module';
+import { PriceCalculationModule } from './price-calculation/price-calculation.module';
 import { SetupController } from './setup/setup.controller';
 import { PricingController } from './pricing/pricing.controller';
 import { PricingService } from './pricing/pricing.service';
@@ -39,9 +41,20 @@ import { CustomerMapping } from './entities/customer-mapping.entity';
 import { StandardPriceHistory } from './entities/standard-price-history.entity';
 import { FabCostHistory } from './entities/fab-cost-history.entity';
 import { SellingFactorHistory } from './entities/selling-factor-history.entity';
+import { SyncConfig } from './entities/sync-config.entity';
+import { SyncConfigModule } from './sync-config/sync-config.module';
+import { BomModule } from './bom/bom.module';
+import { DummyItemsModule } from './dummy-items/dummy-items.module';
+
+// Check if MongoDB should be enabled
+const ENABLE_MONGODB = process.env.ENABLE_MONGODB === 'true';
 
 @Module({
   imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: '.env',
+    }),
     TypeOrmModule.forRoot(databaseConfig),
     TypeOrmModule.forFeature([
       User,
@@ -65,12 +78,17 @@ import { SellingFactorHistory } from './entities/selling-factor-history.entity';
       ActivityLog,
       ApiSetting,
       Currency,
-      CustomerMapping
+      CustomerMapping,
+      SyncConfig, // Add SyncConfig entity
     ]),
     AuthModule,
     ImportModule,
     ApiSettingsModule,
-    // MongodbModule, // Temporarily disabled - enable when MongoDB is running
+    PriceCalculationModule,
+    SyncConfigModule, // Add SyncConfig Module
+    BomModule, // Add BOM Module for Hybrid BOQ Management
+    DummyItemsModule, // Add Dummy Items Module for Auto-generation
+    ...(ENABLE_MONGODB ? [MongodbModule] : []), // Only import if enabled
   ],
   controllers: [
     AppController,

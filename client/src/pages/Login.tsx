@@ -1,3 +1,7 @@
+// path: client/src/pages/Login.tsx
+// version: 2.0 (JWT Token Storage)
+// last-modified: 14 ตุลาคม 2568 16:15
+
 import React, { useState } from 'react';
 
 // (ใหม่) เพิ่ม Props interface เพื่อรับฟังก์ชัน onLoginSuccess
@@ -14,7 +18,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     e.preventDefault();
     setError('');
     try {
-      const response = await fetch('http://localhost:3001/auth/login', {
+      const response = await fetch('http://localhost:3000/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
@@ -23,12 +27,24 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
       if (!response.ok) {
         throw new Error('Invalid credentials');
       }
-      
-      // (ใหม่) เมื่อ Backend ตอบกลับว่า Login ถูกต้อง
-      // ให้เรียกฟังก์ชัน onLoginSuccess ที่ได้รับมาจาก App.tsx
-      onLoginSuccess();
+
+      // ✅ รับ JWT token จาก Backend response
+      const data = await response.json();
+      const token = data.access_token;
+
+      if (token) {
+        // ✅ เก็บ JWT token ใน localStorage
+        localStorage.setItem('authToken', token);
+        console.log('[Login] JWT token saved to localStorage');
+
+        // เรียกฟังก์ชัน onLoginSuccess
+        onLoginSuccess();
+      } else {
+        throw new Error('No token received from server');
+      }
 
     } catch (err) {
+      console.error('[Login] Login error:', err);
       setError('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
     }
   };

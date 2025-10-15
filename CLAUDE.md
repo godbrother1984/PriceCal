@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 PriceCal คือระบบคำนวณราคาสำหรับองค์กร ประกอบด้วย:
-- **Backend**: NestJS API Server (พอร์ต 3000) + SQLite Database + TypeORM
+- **Backend**: NestJS API Server (พอร์ต 3001) + SQLite Database + TypeORM
 - **Frontend**: React + Vite + TypeScript + Tailwind CSS
 - **Database**: SQLite (development) / PostgreSQL (production)
 - **Authentication**: JWT + bcrypt (ไม่ใช่ hardcode)
@@ -66,7 +66,7 @@ npm run preview           # preview production build
 - **Component-level**: Form states และ local UI states
 
 ### API Communication
-- Base URL: `http://localhost:3000`
+- Base URL: `http://localhost:3001`
 - ใช้ fetch API สำหรับการเรียก backend
 - CORS enabled ที่ backend
 
@@ -118,6 +118,6 @@ npm run preview           # preview production build
 
 ## Important Notes
 - ระบบยังอยู่ใน Phase 1 (MVP)
-- Backend รันที่พอร์ต 3000, Frontend รันที่พอร์ต Vite default
+- Backend รันที่พอร์ต 3001, Frontend รันที่พอร์ต 5173 (Vite default)
 - การพัฒนาต้องยึดเอกสารการพัฒนาเป็นหลัก
 - ใช้เครื่องมือและ framework ที่ทันสมัย
