@@ -1,6 +1,6 @@
 // path: client/src/pages/MasterData.tsx
-// version: 5.1 (Add BOQ Management Tab)
-// last-modified: 14 ตุลาคม 2568 16:30
+// version: 6.1 (Fix table display - show columns only, not ID)
+// last-modified: 27 ตุลาคม 2568 16:30
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -10,6 +10,7 @@ import ImportManager from '../components/ImportManager';
 import MasterDataViewer from '../components/MasterDataViewer';
 import BOQViewer from '../components/BOQViewer';
 import BOQEditor from '../components/BOQEditor';
+import ItemMappingManager from '../components/ItemMappingManager';
 
 // --- Types ---
 interface Column {
@@ -1221,6 +1222,26 @@ const StandardPrices: React.FC = () => {
     }
   };
 
+  const handleFixAllStatus = async () => {
+    if (!confirm('คุณต้องการแก้ไข status ของ Standard Prices ทั้งหมดจาก "Approved" เป็น "Active" หรือไม่?\n\nการกระทำนี้จะทำให้ระบบสามารถค้นหา Standard Prices ได้อีกครั้ง')) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await api.post('/api/data/standard-prices/fix-status');
+      console.log('[Fix Status Response]', response.data);
+      setSuccessMessage(`แก้ไข status สำเร็จ: ${response.data.message || `Fixed ${response.data.count || 0} records`}`);
+      loadData();
+      setTimeout(() => setSuccessMessage(null), 5000);
+    } catch (err: any) {
+      console.error('Fix status error:', err);
+      setError(err.response?.data?.message || 'Failed to fix status');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading) return <LoadingSpinner message="Loading standard prices..." />;
 
   return (
@@ -1260,15 +1281,27 @@ const StandardPrices: React.FC = () => {
 
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-slate-900">Standard Prices</h2>
-        <button
-          onClick={handleAdd}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Add New
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleFixAllStatus}
+            className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors flex items-center gap-2"
+            title="แก้ไข status จาก 'Approved' เป็น 'Active'"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Fix All Status
+          </button>
+          <button
+            onClick={handleAdd}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Add New
+          </button>
+        </div>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
@@ -1858,6 +1891,7 @@ const MasterData: React.FC = () => {
       subTabs: [
         { id: 'viewBOQ', label: 'View BOQ', component: BOQViewer },
         { id: 'editBOQ', label: 'Create/Edit BOQ', component: BOQEditor },
+        { id: 'itemMapping', label: 'Item Mapping', component: ItemMappingManager },
       ]
     },
     {

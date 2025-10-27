@@ -1,6 +1,6 @@
 // path: client/src/components/ApprovalWorkflow.tsx
-// version: 2.0 (Horizontal Layout with Comment Modal)
-// last-modified: 25 กันยายน 2568 10:00
+// version: 2.1 (Update status types for new workflow)
+// last-modified: 22 ตุลาคม 2568 19:30
 
 import React, { useState, useEffect } from 'react';
 
@@ -18,7 +18,7 @@ interface ApprovalWorkflowProps {
   defaultSteps?: WorkflowStep[];
   onWorkflowChange?: (steps: WorkflowStep[]) => void;
   readonly?: boolean;
-  requestStatus?: 'Draft' | 'Pending' | 'Calculating' | 'Pending Approval' | 'Approved' | 'Rejected';
+  requestStatus?: 'Draft' | 'Submitted' | 'Calculating' | 'Priced' | 'Approved' | 'Rejected';
   onApproveStep?: (stepId: string, comment: string) => void;
 }
 

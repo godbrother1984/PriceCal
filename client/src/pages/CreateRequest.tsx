@@ -1,12 +1,12 @@
 // path: client/src/pages/CreateRequest.tsx
-// version: 4.0 (Replace fetch() with axios api instance)
-// last-modified: 14 ตุลาคม 2568 16:45
+// version: 5.2 (Add Quantity and Currency fields for order details)
+// last-modified: 24 ตุลาคม 2568 09:45
 
 import React, { useState, useEffect } from 'react';
 import api from '../services/api'; // ✅ ใช้ centralized api instance ที่มี JWT interceptor
 import eventBus, { EVENTS } from '../services/eventBus';
 import ApprovalWorkflow from '../components/ApprovalWorkflow';
-import PriceCalculator from '../components/PriceCalculator';
+import ItemStatusBadge from '../components/ItemStatusBadge';
 
 // --- Interfaces ---
 interface CreateRequestProps {
@@ -16,14 +16,16 @@ interface CreateRequestProps {
 }
 
 interface FormData {
-  customerId?: string; 
+  customerId?: string;
   customerName?: string;
-  newCustomerName?: string; 
+  newCustomerName?: string;
   newCustomerContact?: string;
-  productId?: string; 
+  productId?: string;
   productName?: string;
-  newProductName?: string; 
+  newProductName?: string;
   newProductDrawing?: string;
+  quantity?: number; // จำนวนที่ลูกค้าต้องการสั่ง
+  currency?: string; // สกุลเงินที่ลูกค้าต้องการ (THB, USD, EUR, etc.)
 }
 
 interface BoqItem {
@@ -49,8 +51,9 @@ interface Customer {
 }
 
 interface Product {
-  id: string; 
+  id: string;
   name: string;
+  itemStatus?: string; // 'AVAILABLE' | 'IN_USE' | 'MAPPED' | 'REPLACED' | 'PRODUCTION'
 }
 
 // interface RawMaterial {
@@ -65,8 +68,7 @@ interface RequestData {
   productType: 'existing' | 'new';
   boqItems: BoqItem[];
   specialRequests: SpecialRequest[];
-  status?: 'Draft' | 'Pending' | 'Calculating' | 'Pending Approval' | 'Approved' | 'Rejected';
-  // ลบ calculationResult - Sales user ไม่ต้องใช้
+  status?: 'Draft' | 'Submitted' | 'Calculating' | 'Priced' | 'Approved' | 'Rejected';
 }
 
 // --- Main Component ---
@@ -83,18 +85,17 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingBOM, setIsFetchingBOM] = useState(false);
   const [error, setError] = useState('');
-  const [requestStatus, setRequestStatus] = useState<'Draft' | 'Pending' | 'Calculating' | 'Pending Approval' | 'Approved' | 'Rejected'>('Draft');
-  // ลบ calculationResult state - ไม่ต้องใช้สำหรับ Sales user
+  const [requestStatus, setRequestStatus] = useState<'Draft' | 'Submitted' | 'Calculating' | 'Priced' | 'Approved' | 'Rejected'>('Draft');
+  // Draft: กำลังสร้าง | Submitted: ส่งไปให้ Pricing Team แล้ว | Calculating: กำลังคำนวณ | Priced: คำนวณเสร็จแล้ว
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  // ลบ rawMaterials state - Sales user ไม่ต้องเลือก raw materials
-  
+
   const [customerSearch, setCustomerSearch] = useState('');
   const [productSearch, setProductSearch] = useState('');
 
-  // Determine if form should be readonly (only when approved or rejected)
-  const isReadonly = requestStatus === 'Approved' || requestStatus === 'Rejected';
+  // 🔒 Sales ห้ามแก้ไขหลังจาก Submit Request แล้ว
+  const isReadonly = requestStatus !== 'Draft';
 
   // Helper function to extract array data from API response
   const extractApiArrayData = (response: any): any[] => {
@@ -281,7 +282,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
     setSpecialRequests(prev => prev.filter(req => req.id !== id));
   };
 
-  // บันทึกเป็น Draft
+  // บันทึกแบบร่าง (Draft)
   const handleSaveDraft = async () => {
     setIsLoading(true);
     setError('');
@@ -293,7 +294,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
         productType,
         boqItems,
         specialRequests,
-        status: 'Draft'
+        status: 'Draft' // บันทึกเป็น Draft ยังไม่ส่ง
       };
 
       // Use axios for PUT/POST
@@ -304,17 +305,17 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
       }
 
       setRequestStatus('Draft');
-      alert('บันทึกเป็น Draft เรียบร้อยแล้ว');
-      if (!requestId) onSuccess(); // ถ้าเป็นการสร้างใหม่ให้กลับไปหน้า list
+      alert('✅ บันทึกแบบร่างเรียบร้อยแล้ว\n\nคุณสามารถกลับมาแก้ไขและส่งคำขอได้ภายหลัง');
+      onSuccess();
     } catch (err) {
       console.error('Failed to save draft:', err);
-      setError('ไม่สามารถบันทึกคำขอได้');
+      setError('ไม่สามารถบันทึกได้');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // ส่งคำขอ (เปลี่ยนเป็น Pending)
+  // ส่งคำขอ (เปลี่ยนเป็น Submitted)
   const handleSubmitRequest = async () => {
     setIsLoading(true);
     setError('');
@@ -326,7 +327,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
         productType,
         boqItems,
         specialRequests,
-        status: 'Pending'
+        status: 'Submitted' // ส่งให้ Pricing Team
       };
 
       // Use axios for PUT/POST
@@ -336,8 +337,8 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
         await api.post('/api/data/requests', requestData);
       }
 
-      setRequestStatus('Pending');
-      alert('ส่งคำขอราคาเรียบร้อยแล้ว');
+      setRequestStatus('Submitted');
+      alert('✅ ส่งคำขอราคาให้ Pricing Team เรียบร้อยแล้ว\n\n🔒 คุณไม่สามารถแก้ไขข้อมูลได้อีกแล้ว');
       onSuccess();
     } catch (err) {
       console.error('Failed to submit request:', err);
@@ -413,6 +414,31 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
       )}
 
       <div className="max-w-7xl mx-auto">
+        {/* Status Badge */}
+        <div className="mb-6">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-slate-600">สถานะ:</span>
+            <span className={`px-4 py-2 rounded-full text-sm font-semibold ${
+              requestStatus === 'Draft' ? 'bg-gray-100 text-gray-700' :
+              requestStatus === 'Submitted' ? 'bg-blue-100 text-blue-700' :
+              requestStatus === 'Calculating' ? 'bg-yellow-100 text-yellow-700' :
+              requestStatus === 'Priced' ? 'bg-green-100 text-green-700' :
+              requestStatus === 'Approved' ? 'bg-emerald-100 text-emerald-700' :
+              'bg-red-100 text-red-700'
+            }`}>
+              {requestStatus === 'Draft' ? '📝 กำลังสร้าง' :
+               requestStatus === 'Submitted' ? '📤 ส่งให้ Pricing Team แล้ว' :
+               requestStatus === 'Calculating' ? '⚙️ กำลังคำนวณ' :
+               requestStatus === 'Priced' ? '✅ คำนวณเสร็จแล้ว' :
+               requestStatus === 'Approved' ? '✨ อนุมัติแล้ว' :
+               '❌ ปฏิเสธ'}
+            </span>
+            {isReadonly && (
+              <span className="text-sm text-amber-600 font-medium">🔒 ไม่สามารถแก้ไขได้</span>
+            )}
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
           {/* Left Column - Main Information */}
           <div className="space-y-6">
@@ -541,6 +567,62 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
               </div>
             </div>
 
+            {/* Order Details Card */}
+            <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
+              <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 rounded-t-lg">
+                <h2 className="text-lg font-semibold text-slate-800 flex items-center">
+                  <svg className="w-5 h-5 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                  รายละเอียดการสั่งซื้อ
+                </h2>
+              </div>
+              <div className="p-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Quantity Field */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      จำนวนที่ต้องการ <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.quantity || ''}
+                      onChange={(e) => handleFormChange('quantity', e.target.value)}
+                      placeholder="ระบุจำนวน"
+                      min="1"
+                      disabled={isReadonly}
+                      className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                      required
+                    />
+                    <p className="mt-1 text-xs text-slate-500">จำนวนสินค้าที่ลูกค้าต้องการสั่ง</p>
+                  </div>
+
+                  {/* Currency Field */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      สกุลเงินที่ต้องการเสนอราคา <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={formData.currency || ''}
+                      onChange={(e) => handleFormChange('currency', e.target.value)}
+                      disabled={isReadonly}
+                      className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                      required
+                    >
+                      <option value="">เลือกสกุลเงิน</option>
+                      <option value="THB">THB - บาทไทย</option>
+                      <option value="USD">USD - ดอลลาร์สหรัฐ</option>
+                      <option value="EUR">EUR - ยูโร</option>
+                      <option value="JPY">JPY - เยนญี่ปุ่น</option>
+                      <option value="CNY">CNY - หยวนจีน</option>
+                      <option value="SGD">SGD - ดอลลาร์สิงคโปร์</option>
+                    </select>
+                    <p className="mt-1 text-xs text-slate-500">สกุลเงินที่ลูกค้าต้องการให้เสนอราคา</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Product Info Card */}
             <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
               <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 rounded-t-lg">
@@ -616,8 +698,19 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                       onClick={() => handleProductSelect(product)}
                       className="w-full p-3 text-left hover:bg-blue-50 border-b border-slate-100 last:border-b-0 transition-colors"
                     >
-                      <div className="font-medium text-slate-900">{product.name}</div>
-                      <div className="text-sm text-slate-500">{product.id}</div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="font-medium text-slate-900">{product.name}</div>
+                          <div className="text-sm text-slate-500">{product.id}</div>
+                        </div>
+
+                        {/* Item Status Badge */}
+                        {product.itemStatus && (
+                          <div className="ml-2">
+                            <ItemStatusBadge status={product.itemStatus} size="sm" />
+                          </div>
+                        )}
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -626,9 +719,19 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
               {/* Selected Product Display */}
               {formData.productId && (
                 <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                  <div className="text-sm text-blue-800">
-                    <strong>เลือกแล้ว:</strong> {formData.productName} ({formData.productId})
-                    {isFetchingBOM && <span className="ml-2">(กำลังโหลด BOM จากระบบ...)</span>}
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-blue-800">
+                      <strong>เลือกแล้ว:</strong> {formData.productName} ({formData.productId})
+                      {isFetchingBOM && <span className="ml-2">(กำลังโหลด BOM จากระบบ...)</span>}
+                    </div>
+
+                    {/* Item Status Badge */}
+                    {(() => {
+                      const selectedProduct = products.find(p => p.id === formData.productId);
+                      return selectedProduct?.itemStatus ? (
+                        <ItemStatusBadge status={selectedProduct.itemStatus} size="sm" />
+                      ) : null;
+                    })()}
                   </div>
                 </div>
               )}
@@ -885,32 +988,8 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
               />
             )}
 
-            {/* Price Calculator - Show when product is selected and has quantity */}
-            {formData.productId && boqItems.length > 0 && (
-              <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
-                <div className="px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-green-50 to-blue-50 rounded-t-lg">
-                  <h2 className="text-lg font-semibold text-slate-800 flex items-center">
-                    <svg className="w-5 h-5 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                    </svg>
-                    คำนวณราคา (Price Calculation)
-                  </h2>
-                  <p className="text-sm text-slate-600 mt-1">
-                    คำนวณราคาจาก BOQ และ Master Pricing Data (Standard Price, LME Price, FAB Cost, Selling Factor, Exchange Rate)
-                  </p>
-                </div>
-                <div className="px-6 py-4">
-                  <PriceCalculator
-                    productId={formData.productId}
-                    quantity={1}
-                    onCalculationComplete={(result) => {
-                      console.log('Price calculation completed:', result);
-                      // TODO: Save calculation result to price request
-                    }}
-                  />
-                </div>
-              </div>
-            )}
+            {/* Price Calculator - ลบออกแล้ว เพราะ Sales ไม่ควรคำนวณราคาเอง */}
+            {/* Pricing Team จะคำนวณราคาในหน้า Price Calculator แยกต่างหาก */}
           </div>
         </div>
       </div>
@@ -954,7 +1033,7 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
             </button>
           )}
 
-          {/* Submit Request Button - Only show when not readonly */}
+          {/* Submit Button - Only show when not readonly */}
           {!isReadonly && (
             <button
               type="button"
@@ -963,7 +1042,9 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                 (customerType === 'existing' && !formData.customerId) ||
                 (customerType === 'new' && !formData.newCustomerName) ||
                 (productType === 'existing' && !formData.productId) ||
-                (productType === 'new' && !formData.newProductName)
+                (productType === 'new' && !formData.newProductName) ||
+                !formData.quantity ||
+                !formData.currency
               }
               className="px-6 py-3 text-white font-semibold bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors min-w-[140px] flex items-center justify-center"
             >
@@ -976,8 +1057,9 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                   กำลังส่ง...
                 </>
               ) : (
-                requestId ? 'อัปเดตคำขอราคา' : 'ส่งคำขอราคา'
-              )}
+                requestId ? 'อัปเดตและส่งคำขอ' : 'ส่งคำขอราคา'
+              )
+              }
             </button>
           )}
         </div>

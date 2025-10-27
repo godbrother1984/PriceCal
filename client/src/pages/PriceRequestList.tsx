@@ -1,6 +1,6 @@
 // path: client/src/pages/PriceRequestList.tsx
-// version: 3.0 (Use Centralized API with JWT Authentication)
-// last-modified: 14 ตุลาคม 2568 16:20
+// version: 3.1 (Fix status: Change Pending → Submitted, Use English status names to match columns)
+// last-modified: 24 ตุลาคม 2568 10:15
 
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api'; // ✅ ใช้ centralized api instance ที่มี JWT interceptor
@@ -11,7 +11,7 @@ interface PriceRequest {
   id: string;
   customerName: string;
   productName: string;
-  status: 'Draft' | 'Pending' | 'Calculating' | 'Pending Approval' | 'Approved' | 'Rejected';
+  status: 'Draft' | 'Submitted' | 'Calculating' | 'Pending Approval' | 'Approved' | 'Rejected';
   createdBy: string;
   createdAt: string;
   costingBy?: string;
@@ -175,17 +175,17 @@ const PriceRequestList: React.FC<PriceRequestListProps> = ({ onNavigate, onEdit,
     const baseClasses = 'px-3 py-1 rounded-full text-xs font-medium';
     switch (status) {
       case 'Draft':
-        return <span className={`${baseClasses} bg-gray-100 text-gray-800`}>แบบร่าง</span>;
-      case 'Pending':
-        return <span className={`${baseClasses} bg-yellow-100 text-yellow-800`}>รอตรวจสอบ</span>;
+        return <span className={`${baseClasses} bg-gray-100 text-gray-800`}>Draft</span>;
+      case 'Submitted':
+        return <span className={`${baseClasses} bg-yellow-100 text-yellow-800`}>Submitted</span>;
       case 'Calculating':
-        return <span className={`${baseClasses} bg-blue-100 text-blue-800`}>กำลังคำนวณ</span>;
+        return <span className={`${baseClasses} bg-blue-100 text-blue-800`}>Calculating</span>;
       case 'Pending Approval':
-        return <span className={`${baseClasses} bg-orange-100 text-orange-800`}>รออนุมัติ</span>;
+        return <span className={`${baseClasses} bg-orange-100 text-orange-800`}>Pending Approval</span>;
       case 'Approved':
-        return <span className={`${baseClasses} bg-green-100 text-green-800`}>อนุมัติแล้ว</span>;
+        return <span className={`${baseClasses} bg-green-100 text-green-800`}>Approved</span>;
       case 'Rejected':
-        return <span className={`${baseClasses} bg-red-100 text-red-800`}>ปฏิเสธ</span>;
+        return <span className={`${baseClasses} bg-red-100 text-red-800`}>Rejected</span>;
       default:
         return <span className={`${baseClasses} bg-gray-100 text-gray-800`}>{status}</span>;
     }
@@ -229,7 +229,7 @@ const PriceRequestList: React.FC<PriceRequestListProps> = ({ onNavigate, onEdit,
     setContextMenu(null);
   };
 
-  const tabs = ['All', 'Draft', 'Pending', 'Calculating', 'Pending Approval', 'Approved', 'Rejected'];
+  const tabs = ['All', 'Draft', 'Submitted', 'Calculating', 'Pending Approval', 'Approved', 'Rejected'];
 
   return (
     <div className="space-y-6">

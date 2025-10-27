@@ -1,6 +1,6 @@
 // path: server/src/entities/raw-material.entity.ts
-// version: 2.0 (Add Audit Trail with ExternalDataEntity)
-// last-modified: 1 ตุลาคม 2568 13:20
+// version: 2.1 (Add itemGroupCode for LME Price mapping)
+// last-modified: 22 ตุลาคม 2568 19:00
 
 import { Entity, PrimaryColumn, Column } from 'typeorm';
 import { ExternalDataEntity } from './base.entity';
@@ -21,6 +21,9 @@ export class RawMaterial extends ExternalDataEntity {
 
   @Column({ nullable: true })
   description: string;
+
+  @Column({ nullable: true })
+  itemGroupCode: string; // AL, CU, ST, etc. - for LME Price matching
 
   // Note: isActive, externalId, lastSyncAt, source, createdAt, updatedAt, createdBy, updatedBy
   // are inherited from ExternalDataEntity

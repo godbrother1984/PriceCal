@@ -564,30 +564,38 @@ export class DataService {
 
     const oldData = { ...price };
 
-    // อัพเดท version ถ้ามีการเปลี่ยนแปลงราคา
-    if (price.price !== priceDto.price) {
-      price.version = (price.version || 1) + 1;
+    try {
+      // ปิด FK check ชั่วคราว
+      await this.standardPriceRepository.query('PRAGMA foreign_keys = OFF');
+
+      // อัพเดท version ถ้ามีการเปลี่ยนแปลงราคา
+      if (price.price !== priceDto.price) {
+        price.version = (price.version || 1) + 1;
+      }
+
+      Object.assign(price, priceDto);
+      const savedPrice = await this.standardPriceRepository.save(price);
+
+      // บันทึก history
+      await this.createStandardPriceHistory(savedPrice, 'UPDATE', 'admin');
+
+      // บันทึก activity log
+      await this.activityLogService.logMasterDataChanged(
+        'standard_prices',
+        savedPrice.id,
+        'admin',
+        'Admin',
+        'UPDATE',
+        oldData,
+        savedPrice,
+        priceDto.changeReason
+      );
+
+      return savedPrice;
+    } finally {
+      // เปิด FK check กลับ
+      await this.standardPriceRepository.query('PRAGMA foreign_keys = ON');
     }
-
-    Object.assign(price, priceDto);
-    const savedPrice = await this.standardPriceRepository.save(price);
-
-    // บันทึก history
-    await this.createStandardPriceHistory(savedPrice, 'UPDATE', 'admin');
-
-    // บันทึก activity log
-    await this.activityLogService.logMasterDataChanged(
-      'standard_prices',
-      savedPrice.id,
-      'admin',
-      'Admin',
-      'UPDATE',
-      oldData,
-      savedPrice,
-      priceDto.changeReason
-    );
-
-    return savedPrice;
   }
 
   // Helper method สำหรับสร้าง history record
@@ -657,7 +665,7 @@ export class DataService {
 
       // ใช้ update แทน save เพื่อหลีกเลี่ยง FK constraint error
       await this.standardPriceRepository.update(id, {
-        status: 'Approved',
+        status: 'Active', // ✅ เปลี่ยนจาก 'Approved' เป็น 'Active' เพื่อให้ query เจอ
         approvedBy: userId,
         approvedAt: new Date()
       });
@@ -1183,5 +1191,44 @@ export class DataService {
     rate.isActive = false;
     await this.exchangeRateMasterDataRepository.save(rate);
     return { message: `Deleted exchange rate master data with ID ${id}` };
+  }
+
+  // ✅ ONE-TIME FIX: แก้ไข status ของ Standard Prices ที่มีอยู่จาก 'Approved' → 'Active'
+  async fixStandardPricesStatus() {
+    try {
+      console.log('[fixStandardPricesStatus] Starting to fix Standard Prices status...');
+
+      // ปิด FK check ชั่วคราว
+      await this.standardPriceRepository.query('PRAGMA foreign_keys = OFF');
+
+      // ค้นหาทั้งหมดที่มี status = 'Approved'
+      const approvedPrices = await this.standardPriceRepository.find({
+        where: { status: 'Approved' as any }
+      });
+
+      console.log(`[fixStandardPricesStatus] Found ${approvedPrices.length} Standard Prices with status='Approved'`);
+
+      // อัปเดตทีละตัว
+      for (const price of approvedPrices) {
+        await this.standardPriceRepository.update(price.id, {
+          status: 'Active'
+        });
+        console.log(`[fixStandardPricesStatus] Updated ${price.id} to status='Active'`);
+      }
+
+      // เปิด FK check กลับ
+      await this.standardPriceRepository.query('PRAGMA foreign_keys = ON');
+
+      console.log('[fixStandardPricesStatus] Successfully fixed all Standard Prices status');
+
+      return {
+        success: true,
+        message: `Fixed ${approvedPrices.length} Standard Prices from 'Approved' to 'Active'`,
+        count: approvedPrices.length
+      };
+    } catch (error) {
+      console.error('[fixStandardPricesStatus] Error:', error);
+      throw error;
+    }
   }
 }

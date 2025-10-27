@@ -1,9 +1,10 @@
 // path: client/src/components/BOQViewer.tsx
-// version: 1.0 (BOQ Viewer - View BOQ from D365 and PriceCal)
-// last-modified: 14 ตุลาคม 2568 16:15
+// version: 1.1 (Add Item Status Badge)
+// last-modified: 21 ตุลาคม 2568 14:35
 
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
+import ItemStatusBadge from './ItemStatusBadge';
 
 interface BOQItem {
   id: string;
@@ -26,6 +27,7 @@ interface Product {
   code: string;
   hasBOQ: boolean;
   productSource?: string;
+  itemStatus?: string; // 'AVAILABLE' | 'IN_USE' | 'MAPPED' | 'REPLACED' | 'PRODUCTION'
 }
 
 const BOQViewer: React.FC = () => {
@@ -141,13 +143,19 @@ const BOQViewer: React.FC = () => {
                     >
                       <div className="font-medium text-sm mb-1">{product.name}</div>
                       <div className="text-xs text-slate-500">{product.code}</div>
-                      {product.hasBOQ && (
-                        <div className="mt-2">
+
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {product.hasBOQ && (
                           <span className="px-2 py-0.5 text-xs bg-green-100 text-green-800 rounded">
                             Has BOQ
                           </span>
-                        </div>
-                      )}
+                        )}
+
+                        {/* Item Status Badge */}
+                        {product.itemStatus && (
+                          <ItemStatusBadge status={product.itemStatus} size="sm" />
+                        )}
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -190,17 +198,25 @@ const BOQViewer: React.FC = () => {
                         Code: {selectedProduct?.code}
                       </p>
                     </div>
-                    {selectedProduct?.productSource && (
-                      <span
-                        className={`px-3 py-1 text-sm font-medium rounded ${
-                          selectedProduct.productSource === 'D365'
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-green-100 text-green-800'
-                        }`}
-                      >
-                        {selectedProduct.productSource}
-                      </span>
-                    )}
+
+                    <div className="flex flex-col gap-2 items-end">
+                      {selectedProduct?.productSource && (
+                        <span
+                          className={`px-3 py-1 text-sm font-medium rounded ${
+                            selectedProduct.productSource === 'D365'
+                              ? 'bg-blue-100 text-blue-800'
+                              : 'bg-green-100 text-green-800'
+                          }`}
+                        >
+                          {selectedProduct.productSource}
+                        </span>
+                      )}
+
+                      {/* Item Status Badge */}
+                      {selectedProduct?.itemStatus && (
+                        <ItemStatusBadge status={selectedProduct.itemStatus} size="md" />
+                      )}
+                    </div>
                   </div>
 
                   {boqItems.length > 0 && (

@@ -1,6 +1,6 @@
 // path: server/src/database/seeder.service.ts
-// version: 1.2 (Add LME and Exchange Rate Master Data Seeding)
-// last-modified: 1 ตุลาคม 2568 18:45
+// version: 1.3 (Add Currency Seeding)
+// last-modified: 27 ตุลาคม 2568 16:30
 
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -20,6 +20,9 @@ import { LmePrice } from '../entities/lme-price.entity';
 import { LmeMasterData } from '../entities/lme-master-data.entity';
 import { ExchangeRate } from '../entities/exchange-rate.entity';
 import { ExchangeRateMasterData } from '../entities/exchange-rate-master-data.entity';
+import { PricingFormula } from '../entities/pricing-formula.entity';
+import { PricingRule } from '../entities/pricing-rule.entity';
+import { Currency } from '../entities/currency.entity';
 
 @Injectable()
 export class SeederService {
@@ -52,6 +55,12 @@ export class SeederService {
     private exchangeRateRepository: Repository<ExchangeRate>,
     @InjectRepository(ExchangeRateMasterData)
     private exchangeRateMasterDataRepository: Repository<ExchangeRateMasterData>,
+    @InjectRepository(PricingFormula)
+    private pricingFormulaRepository: Repository<PricingFormula>,
+    @InjectRepository(PricingRule)
+    private pricingRuleRepository: Repository<PricingRule>,
+    @InjectRepository(Currency)
+    private currencyRepository: Repository<Currency>,
   ) {}
 
   async seed() {
@@ -59,6 +68,9 @@ export class SeederService {
 
     // สร้าง Admin User เริ่มต้น
     await this.seedUsers();
+
+    // สร้าง Currencies (ต้องมาก่อน Master Data)
+    await this.seedCurrencies();
 
     // สร้างข้อมูลหลัก
     await this.seedMasterData();
@@ -68,6 +80,9 @@ export class SeederService {
 
     // สร้างข้อมูลราคาและการคำนวณ
     await this.seedPricingData();
+
+    // สร้าง Base Formula และ Custom Rules (Hybrid System)
+    await this.seedHybridFormulaSystem();
 
     console.log('✅ Database seeding completed!');
   }
@@ -88,6 +103,28 @@ export class SeederService {
       await this.userRepository.save(admin);
       console.log('👤 Created admin user (admin/admin)');
     }
+  }
+
+  private async seedCurrencies() {
+    // ✅ สกุลเงินที่รองรับในระบบ
+    const currencies = [
+      { id: 'CUR-THB', code: 'THB', name: 'Thai Baht', symbol: '฿', isActive: true },
+      { id: 'CUR-USD', code: 'USD', name: 'US Dollar', symbol: '$', isActive: true },
+      { id: 'CUR-EUR', code: 'EUR', name: 'Euro', symbol: '€', isActive: true },
+      { id: 'CUR-JPY', code: 'JPY', name: 'Japanese Yen', symbol: '¥', isActive: true },
+      { id: 'CUR-CNY', code: 'CNY', name: 'Chinese Yuan', symbol: '¥', isActive: true },
+      { id: 'CUR-SGD', code: 'SGD', name: 'Singapore Dollar', symbol: 'S$', isActive: true },
+    ];
+
+    for (const currency of currencies) {
+      const exists = await this.currencyRepository.findOne({ where: { code: currency.code } });
+      if (!exists) {
+        await this.currencyRepository.save(currency);
+        console.log(`💱 Created currency: ${currency.code} (${currency.name})`);
+      }
+    }
+
+    console.log('💱 Currencies seeded successfully');
   }
 
   private async seedMasterData() {
@@ -135,10 +172,10 @@ export class SeederService {
 
     // Raw Materials
     const rawMaterials = [
-      { id: 'RM-AL-01', name: 'Aluminum Sheet 1.2mm', unit: 'kg' },
-      { id: 'RM-CU-02', name: 'Copper Wire 0.5mm', unit: 'm' },
-      { id: 'RM-ST-03', name: 'Steel Coil 2.0mm', unit: 'kg' },
-      { id: 'RM-PC-04', name: 'Polycarbonate Pellet', unit: 'kg' },
+      { id: 'RM-AL-01', name: 'Aluminum Sheet 1.2mm', unit: 'kg', itemGroupCode: 'AL' },
+      { id: 'RM-CU-02', name: 'Copper Wire 0.5mm', unit: 'm', itemGroupCode: 'CU' },
+      { id: 'RM-ST-03', name: 'Steel Coil 2.0mm', unit: 'kg', itemGroupCode: 'ST' },
+      { id: 'RM-PC-04', name: 'Polycarbonate Pellet', unit: 'kg', itemGroupCode: 'PC' },
     ];
 
     for (const material of rawMaterials) {
@@ -354,15 +391,16 @@ export class SeederService {
     }
 
     // LME Master Data (for calculation - employee defined)
+    // ✅ LME Price ต้องเป็นหน่วย THB (ตามความต้องการของผู้ใช้)
     const lmeMasterData = [
       {
         itemGroupName: 'Aluminum',
         itemGroupCode: 'AL',
-        price: 2200.00,
-        currency: 'USD',
+        price: 79200.00, // ✅ THB (2200 USD * 36 THB/USD)
+        currency: 'THB',
         customerGroupId: null,
-        description: 'LME price for aluminum calculation',
-        status: 'Approved',
+        description: 'LME price for aluminum calculation (THB)',
+        status: 'Active', // ✅ Changed to Active
         effectiveFrom: new Date('2024-01-01'),
         effectiveTo: null,
         isActive: true,
@@ -371,11 +409,11 @@ export class SeederService {
       {
         itemGroupName: 'Copper',
         itemGroupCode: 'CU',
-        price: 9000.00,
-        currency: 'USD',
+        price: 324000.00, // ✅ THB (9000 USD * 36 THB/USD)
+        currency: 'THB',
         customerGroupId: null,
-        description: 'LME price for copper calculation',
-        status: 'Approved',
+        description: 'LME price for copper calculation (THB)',
+        status: 'Active', // ✅ Changed to Active
         effectiveFrom: new Date('2024-01-01'),
         effectiveTo: null,
         isActive: true,
@@ -439,5 +477,195 @@ export class SeederService {
     }
 
     console.log('💰 Pricing data seeded successfully');
+  }
+
+  /**
+   * Seed Hybrid Formula System
+   * - Base Formula (default pricing formula)
+   * - Custom Rules (VIP, Volume Discount, etc.)
+   */
+  private async seedHybridFormulaSystem() {
+    // ✅ 1. Seed Base Formula
+    const baseFormulaExists = await this.pricingFormulaRepository.findOne({
+      where: { isDefault: true },
+    });
+
+    if (!baseFormulaExists) {
+      const baseFormula = this.pricingFormulaRepository.create({
+        name: 'Standard Pricing Formula',
+        description: 'สูตรคำนวณราคามาตรฐาน (Default Base Formula)',
+        materialCostFormula: 'sum(bomQuantity * unitPrice)',
+        totalCostFormula: 'materialCost + fabCost',
+        sellingPriceFormula: 'totalCost * sellingFactor',
+        marginFormula: '(sellingPrice - totalCost) / totalCost * 100',
+        exchangeRateFormula: 'sellingPrice * exchangeRate',
+        customVariables: null,
+        isDefault: true,
+        customerGroupId: null, // ใช้กับทุก customer group
+        status: 'Active',
+        version: 1,
+        createdBy: 'system',
+        updatedBy: 'system',
+        approvedBy: 'system',
+        approvedAt: new Date(),
+        effectiveFrom: new Date('2024-01-01'),
+        effectiveTo: null,
+        isActive: true,
+      });
+
+      await this.pricingFormulaRepository.save(baseFormula);
+      console.log('📐 Created default base formula');
+    }
+
+    // ✅ 2. Seed Custom Rules (Examples)
+
+    // Rule 1: VIP Customer with LME Materials
+    const rule1Exists = await this.pricingRuleRepository.findOne({
+      where: { name: 'VIP Customer - LME Materials' },
+    });
+
+    if (!rule1Exists) {
+      const rule1 = this.pricingRuleRepository.create({
+        name: 'VIP Customer - LME Materials',
+        description: 'ลูกค้า VIP ที่สั่งวัสดุที่มี LME Price - ใช้ LME + FAB และ margin 15%',
+        priority: 1, // Highest priority
+        conditions: {
+          customerGroupId: 'CG-003', // VIP group
+          hasLMEPrice: true,
+        },
+        overrideFormulas: {
+          materialCostFormula: 'sum((lmePrice + fabCost) * bomQuantity)',
+        },
+        variableAdjustments: {
+          sellingFactor: 1.15, // VIP margin 15%
+        },
+        actions: null,
+        customerGroupId: 'CG-003',
+        isGlobal: false,
+        isActive: true,
+        status: 'Active',
+        version: 1,
+        createdBy: 'system',
+        updatedBy: 'system',
+        approvedBy: 'system',
+        approvedAt: new Date(),
+        effectiveFrom: new Date('2024-01-01'),
+        effectiveTo: null,
+      });
+
+      await this.pricingRuleRepository.save(rule1);
+      console.log('📋 Created rule: VIP Customer - LME Materials');
+    }
+
+    // Rule 2: Volume Discount (>= 1000 units)
+    const rule2Exists = await this.pricingRuleRepository.findOne({
+      where: { name: 'Volume Discount - 1000+ units' },
+    });
+
+    if (!rule2Exists) {
+      const rule2 = this.pricingRuleRepository.create({
+        name: 'Volume Discount - 1000+ units',
+        description: 'ส่วนลด 3% สำหรับการสั่งซื้อตั้งแต่ 1000 units ขึ้นไป',
+        priority: 2,
+        conditions: {
+          quantityMin: 1000,
+        },
+        overrideFormulas: null,
+        variableAdjustments: null,
+        actions: {
+          applyDiscount: {
+            formula: 'sellingPrice * 0.97', // 3% discount
+            applyTo: 'sellingPrice',
+          },
+        },
+        customerGroupId: null, // ใช้กับทุก customer group
+        isGlobal: true,
+        isActive: true,
+        status: 'Active',
+        version: 1,
+        createdBy: 'system',
+        updatedBy: 'system',
+        approvedBy: 'system',
+        approvedAt: new Date(),
+        effectiveFrom: new Date('2024-01-01'),
+        effectiveTo: null,
+      });
+
+      await this.pricingRuleRepository.save(rule2);
+      console.log('📋 Created rule: Volume Discount - 1000+ units');
+    }
+
+    // Rule 3: Premium Customer - Copper Materials
+    const rule3Exists = await this.pricingRuleRepository.findOne({
+      where: { name: 'Premium Customer - Copper' },
+    });
+
+    if (!rule3Exists) {
+      const rule3 = this.pricingRuleRepository.create({
+        name: 'Premium Customer - Copper',
+        description: 'ลูกค้า Premium ที่สั่งผลิตภัณฑ์ทองแดง - margin 18%',
+        priority: 3,
+        conditions: {
+          customerGroupId: 'CG-002', // Premium group
+          rawMaterialType: 'COPPER',
+        },
+        overrideFormulas: null,
+        variableAdjustments: {
+          sellingFactor: 1.18, // Premium margin 18%
+        },
+        actions: null,
+        customerGroupId: 'CG-002',
+        isGlobal: false,
+        isActive: true,
+        status: 'Active',
+        version: 1,
+        createdBy: 'system',
+        updatedBy: 'system',
+        approvedBy: 'system',
+        approvedAt: new Date(),
+        effectiveFrom: new Date('2024-01-01'),
+        effectiveTo: null,
+      });
+
+      await this.pricingRuleRepository.save(rule3);
+      console.log('📋 Created rule: Premium Customer - Copper');
+    }
+
+    // Rule 4: Standard Customer (Default - applies to CG-001)
+    const rule4Exists = await this.pricingRuleRepository.findOne({
+      where: { name: 'Standard Customer - Base Pricing' },
+    });
+
+    if (!rule4Exists) {
+      const rule4 = this.pricingRuleRepository.create({
+        name: 'Standard Customer - Base Pricing',
+        description: 'ลูกค้ามาตรฐาน - ใช้ base formula ไม่มี adjustment',
+        priority: 10, // Low priority (fallback)
+        conditions: {
+          customerGroupId: 'CG-001', // Standard group
+        },
+        overrideFormulas: null, // ใช้ base formula
+        variableAdjustments: {
+          sellingFactor: 1.25, // Standard margin 25%
+        },
+        actions: null,
+        customerGroupId: 'CG-001',
+        isGlobal: false,
+        isActive: true,
+        status: 'Active',
+        version: 1,
+        createdBy: 'system',
+        updatedBy: 'system',
+        approvedBy: 'system',
+        approvedAt: new Date(),
+        effectiveFrom: new Date('2024-01-01'),
+        effectiveTo: null,
+      });
+
+      await this.pricingRuleRepository.save(rule4);
+      console.log('📋 Created rule: Standard Customer - Base Pricing');
+    }
+
+    console.log('🎯 Hybrid Formula System seeded successfully');
   }
 }

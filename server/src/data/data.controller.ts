@@ -182,6 +182,12 @@ export class DataController {
     return this.dataService.approveStandardPrice(id);
   }
 
+  // ✅ ONE-TIME FIX: Fix status for existing Standard Prices
+  @Post('standard-prices/fix-status')
+  fixStandardPricesStatus() {
+    return this.dataService.fixStandardPricesStatus();
+  }
+
   @Put('standard-prices/:id')
   updateStandardPrice(@Param('id') id: string, @Body() priceDto: any) {
     return this.dataService.updateStandardPrice(id, priceDto);

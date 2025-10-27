@@ -42,9 +42,15 @@ import { StandardPriceHistory } from './entities/standard-price-history.entity';
 import { FabCostHistory } from './entities/fab-cost-history.entity';
 import { SellingFactorHistory } from './entities/selling-factor-history.entity';
 import { SyncConfig } from './entities/sync-config.entity';
+import { RawMaterialFabCost } from './entities/raw-material-fab-cost.entity';
+import { PricingFormula } from './entities/pricing-formula.entity';
+import { PricingRule } from './entities/pricing-rule.entity';
 import { SyncConfigModule } from './sync-config/sync-config.module';
 import { BomModule } from './bom/bom.module';
 import { DummyItemsModule } from './dummy-items/dummy-items.module';
+import { FormulaEngineModule } from './formula-engine/formula-engine.module';
+import { RuleEngineModule } from './rule-engine/rule-engine.module';
+import { PricingFormulaModule } from './pricing-formula/pricing-formula.module';
 
 // Check if MongoDB should be enabled
 const ENABLE_MONGODB = process.env.ENABLE_MONGODB === 'true';
@@ -80,10 +86,16 @@ const ENABLE_MONGODB = process.env.ENABLE_MONGODB === 'true';
       Currency,
       CustomerMapping,
       SyncConfig, // Add SyncConfig entity
+      RawMaterialFabCost, // FAB Cost for Raw Materials (LME + FAB)
+      PricingFormula, // Base formulas (Hybrid System)
+      PricingRule, // Custom rules (Hybrid System)
     ]),
     AuthModule,
     ImportModule,
     ApiSettingsModule,
+    FormulaEngineModule, // ✅ Hybrid Formula System
+    RuleEngineModule, // ✅ Hybrid Formula System
+    PricingFormulaModule, // ✅ Pricing Formula Management
     PriceCalculationModule,
     SyncConfigModule, // Add SyncConfig Module
     BomModule, // Add BOM Module for Hybrid BOQ Management

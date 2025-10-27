@@ -6,6 +6,419 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [6.3] - 2025-10-27
+
+### Fixed - Remove FAB Cost (Product) และเพิ่ม Currency Master Data ✅
+
+**Issues Fixed**:
+1. FAB Cost (Product) ไม่ควรใช้ในการคำนวณราคา (ควรใช้เฉพาะ RM FAB Cost)
+2. Currency dropdown ใน Master Data ไม่แสดงข้อมูลเพราะไม่มีการ seed
+3. ✅ LME Price ต้องเป็นหน่วย THB (แก้ไข seeder ให้ใช้ THB แทน USD)
+
+#### Backend Changes
+
+1. **Price Calculation Service** ([price-calculation.service.ts](server/src/price-calculation/price-calculation.service.ts))
+   - ❌ **Comment out FAB Cost (Product)** ในทั้ง 2 methods:
+     - `calculatePrice()` (line 232-239)
+     - `calculatePriceWithHybridSystem()` (line 436-440)
+   - ✅ Set `fabCost = 0` และ `fabCostPerUnit = 0` แทน
+   - ✅ Total Cost ไม่รวม FAB Cost (Product) แล้ว
+   - **เหตุผล**: FAB Cost (Product) เป็น general cost ที่ไม่มี filter และไม่ใช้ในการคำนวณ
+   - **ที่ใช้จริง**: RM FAB Cost (Raw Material Fabrication Cost) ที่ใช้คู่กับ LME Price
+
+2. **Database Seeder** ([seeder.service.ts](server/src/database/seeder.service.ts) v1.2 → v1.3)
+   - ✅ เพิ่ม `Currency` entity import
+   - ✅ เพิ่ม `currencyRepository` injection
+   - ✅ สร้าง method `seedCurrencies()` ที่สร้างสกุลเงิน 6 ตัว:
+     - THB (Thai Baht) ฿
+     - USD (US Dollar) $
+     - EUR (Euro) €
+     - JPY (Japanese Yen) ¥
+     - CNY (Chinese Yuan) ¥
+     - SGD (Singapore Dollar) S$
+   - ✅ เรียก `seedCurrencies()` ก่อน `seedMasterData()` ใน `seed()` method
+   - ✅ **แก้ไข LME Master Data ให้ใช้ THB แทน USD**:
+     - Aluminum: 79,200 THB/kg (เดิม 2,200 USD/kg)
+     - Copper: 324,000 THB/kg (เดิม 9,000 USD/kg)
+   - ✅ เปลี่ยน status จาก 'Approved' เป็น 'Active' เพื่อให้สอดคล้องกับ query
+
+#### Expected Results
+- ✅ Currency dropdown ใน Master Data แสดงข้อมูลสกุลเงินทั้ง 6 ตัว
+- ✅ ราคาที่คำนวณได้จะไม่รวม FAB Cost (Product) อีกต่อไป
+- ✅ ต้นทุนวัตถุดิบจะใช้ LME Price + RM FAB Cost หรือ Standard Price เท่านั้น
+- ✅ LME Price ทั้งหมดเป็นหน่วย THB (THB เป็น base currency ของระบบ)
+
+#### Files Modified
+- `server/src/price-calculation/price-calculation.service.ts` (v3.3 → v3.4)
+- `server/src/database/seeder.service.ts` (v1.2 → v1.3)
+
+## [6.2] - 2025-10-21
+
+### Fixed - Customer Group Pricing via CustomerMapping ✅
+
+**Issue**: ระบบต้องใช้ CustomerMapping แทนการเพิ่ม customerGroupId ใน Customer
+
+**User Clarification**:
+> "customer group คือที่ map ในหน้า master data นะ เมื่อเลือก customer สำหรับ new request เมื่อคำนวนราคาต้องเอา customer ที่เลือกไปหาจาก mapping ที่ทำไว้ในส่วน master data เพื่อส่งค่าไปคำนวนราคา
+> อาจจะให้มีการแสดงผล customer group ในหน้าการคำนวนราคาเพื่อให้ตรวจสอบความถูกต้อง
+> customer จะโดนดึงเป็น master data เข้ามาจาก mongo db"
+
+**Root Cause**:
+1. Customer entity ไม่ควรมี `customerGroupId` (sync มาจาก MongoDB)
+2. ต้องใช้ CustomerMapping entity เพื่อ map Customer → Customer Group
+3. Frontend ไม่แสดง Customer Group ที่ใช้คำนวณราคา
+
+#### Backend Changes
+
+1. **Reverted Customer Entity** ([customer.entity.ts](server/src/entities/customer.entity.ts))
+   - ลบ `customerGroupId` field ออก (ไม่ควรมีเพราะ sync จาก MongoDB)
+   - เพิ่ม comment อธิบายให้ใช้ CustomerMapping
+
+2. **Updated Service**: `PriceCalculationService` ([price-calculation.service.ts](server/src/price-calculation/price-calculation.service.ts) v2.3 → v2.5)
+   - ดึง Customer Group จาก **CustomerMapping** แทน Customer
+   - เพิ่ม `customerGroupName` ในผลลัพธ์
+   - เพิ่ม logging เมื่อไม่เจอ mapping
+
+3. **Updated Module**: `PriceCalculationModule` ([price-calculation.module.ts](server/src/price-calculation/price-calculation.module.ts) v4.1 → v4.2)
+   - ใช้ `CustomerMapping` แทน `Customer`
+
+4. **Updated Interface**: `CalculationResult`
+   - เพิ่ม `customerGroupId?: string`
+   - เพิ่ม `customerGroupName?: string`
+
+#### Frontend Changes
+
+1. **Updated Component**: `PriceCalculator` ([PriceCalculator.tsx](client/src/components/PriceCalculator.tsx) v2.1 → v2.2)
+   - เพิ่ม Customer Group fields ใน interface
+   - **แสดง Customer Group Badge** ในหน้าคำนวณราคาเพื่อตรวจสอบความถูกต้อง
+
+#### Customer Group Pricing Flow
+
+```
+1. User เลือก Customer → customerId = "CUST-001"
+2. Frontend ส่ง customerId ไป Backend
+3. Backend หา CustomerMapping:
+   SELECT * FROM customer_mappings
+   WHERE customerId = "CUST-001" AND isActive = true
+4. Backend ดึง customerGroupId = "CG-VIP"
+5. Backend คำนวณราคาด้วย CG-VIP pricing
+6. Frontend แสดง "👥 Customer Group: VIP Customers (CG-VIP)"
+```
+
+#### Why Use CustomerMapping?
+
+✅ **Correct**: CustomerMapping
+- Customer sync มาจาก MongoDB (ไม่ควรแก้ schema)
+- Flexible: Map ได้หลายแบบ
+- Auditable: เก็บประวัติการ mapping
+
+❌ **Wrong**: เพิ่ม customerGroupId ใน Customer
+- Data จะหายเมื่อ sync ใหม่
+- แก้ schema ของ External Data
+
+#### Technical Details
+- TypeScript compilation: ✅ Passed
+- Backend build: ✅ Successful
+- Database: ✅ ใช้ CustomerMapping ที่มีอยู่แล้ว
+- Breaking changes: ❌ None
+
+---
+
+## [6.1] - 2025-10-21
+
+### Fixed - Price Calculation: Raw Material FAB Cost Support 🔧
+
+**Issue**: FAB Cost ไม่ได้ถูกบวกเข้ากับ LME Price ตามที่ควรจะเป็น
+
+**User Clarification**:
+> "FAB Cost จะใช้คู่กับ LME เพื่อได้มูลค่า RM พวก ทองแดง นะ"
+
+**Root Cause**:
+- ระบบเดิมมี FAB Cost แต่เป็นของ Product (costPerHour)
+- ไม่มี FAB Cost สำหรับ Raw Material แต่ละตัว
+- การคำนวณราคา RM จาก LME ไม่ได้บวก FAB Cost
+
+#### Backend Changes
+
+**New Entity**: `RawMaterialFabCost` ([raw-material-fab-cost.entity.ts](server/src/entities/raw-material-fab-cost.entity.ts) v1.0)
+- เก็บ FAB Cost ของ Raw Material แต่ละตัว
+- ใช้คู่กับ LME Price เพื่อคำนวณมูลค่า RM จริง
+- Fields:
+  - `rawMaterialId`: Raw Material ที่เกี่ยวข้อง
+  - `fabCost`: FAB Cost per unit (USD)
+  - `unit`: หน่วย (ต้องตรงกับ LME Price)
+  - `customerGroupId`: Optional - สำหรับ customer-specific pricing
+  - `description`: คำอธิบาย (เช่น "ค่าขึ้นรูปเป็นแผ่น")
+- Inherits from `VersionedEntity`: รองรับ versioning, approval workflow, effective dates
+
+**Updated Service**: `PriceCalculationService` ([price-calculation.service.ts](server/src/price-calculation/price-calculation.service.ts) v2.2 → v2.3)
+
+1. **New Method**: `getRawMaterialFabCost()`
+   ```typescript
+   private async getRawMaterialFabCost(
+     rawMaterialId: string,
+     customerGroupId?: string,
+   ): Promise<number>
+   ```
+   - ดึง FAB Cost ของ Raw Material
+   - รองรับ Customer Group specific pricing
+   - Default = 0 ถ้าไม่มีการตั้งค่า
+
+2. **Updated Method**: `calculateMaterialCosts()`
+   ```typescript
+   // ✅ ก่อนแก้ไข (ผิด)
+   if (lmePrice !== null) {
+     unitPrice = lmePrice;  // ❌ ขาด FAB Cost
+   }
+
+   // ✅ หลังแก้ไข (ถูกต้อง)
+   if (lmePrice !== null) {
+     unitPrice = lmePrice + rmFabCost;  // ✅ Unit Price = LME + FAB
+   }
+   ```
+
+3. **Updated Interface**: `MaterialCostDetail`
+   - เพิ่ม field `rmFabCost?: number` สำหรับแสดง FAB Cost ใน response
+
+**Updated Module**: `AppModule` ([app.module.ts](server/src/app.module.ts))
+- Register `RawMaterialFabCost` entity
+- Inject `RawMaterialFabCostRepository` ใน PriceCalculationService
+
+#### Pricing Formula (Updated)
+
+```typescript
+// ❌ สูตรเดิม (ผิด)
+if (lmePrice !== null) {
+  unitPrice = lmePrice
+} else if (standardPrice !== null) {
+  unitPrice = standardPrice
+}
+
+// ✅ สูตรใหม่ (ถูกต้อง)
+if (lmePrice !== null) {
+  rmFabCost = await getRawMaterialFabCost(rawMaterialId, customerGroupId)
+  unitPrice = lmePrice + rmFabCost  // LME + FAB Cost
+} else if (standardPrice !== null) {
+  unitPrice = standardPrice  // Standard Price รวม FAB Cost ไว้แล้ว
+}
+
+// Material Cost = Σ(BOQ Quantity × Unit Price × Product Quantity)
+```
+
+#### Example Calculation
+
+**Raw Material: Copper Sheet**
+```typescript
+// Input
+LME Price (Copper) = 8.50 USD/KG
+FAB Cost (Copper Sheet) = 1.20 USD/KG  // ค่าขึ้นรูปเป็นแผ่น
+BOQ Quantity = 2.5 KG
+Product Quantity = 10 Units
+
+// Calculation
+Unit Price = 8.50 + 1.20 = 9.70 USD/KG  // ✅ LME + FAB
+Material Cost = 2.5 × 9.70 × 10 = 242.50 USD
+
+// ❌ สูตรเดิม (ผิด): 2.5 × 8.50 × 10 = 212.50 USD (ต่ำไป 30 USD)
+```
+
+#### API Response Changes
+
+**New Field in MaterialCostDetail**:
+```json
+{
+  "materialCosts": [
+    {
+      "rawMaterialId": "RM-COPPER",
+      "rawMaterialName": "Copper Sheet",
+      "boqQuantity": 2.5,
+      "unitPrice": 9.70,
+      "lmePrice": 8.50,
+      "rmFabCost": 1.20,  // ✅ ใหม่ - แสดง FAB Cost
+      "priceSource": "LME",
+      "totalCost": 242.50
+    }
+  ]
+}
+```
+
+#### Features
+- ✅ **Customer Group Specific FAB Cost**: ตั้งค่า FAB Cost ต่างกันตาม Customer Group
+- ✅ **Master Data Versioning**: เก็บประวัติการเปลี่ยนแปลง FAB Cost
+- ✅ **Approval Workflow**: Draft → Active (ต้องอนุมัติก่อนใช้งาน)
+- ✅ **Default Value**: ถ้าไม่มี FAB Cost = 0 (ไม่ error)
+
+#### Technical Details
+- TypeScript compilation: ✅ Passed
+- Backend build: ✅ Successful
+- Breaking changes: ❌ None (backward compatible)
+- Database migration: ✅ Auto-create table (TypeORM sync)
+
+---
+
+## [6.0] - 2025-10-21
+
+### Added - Phase 1: Manual Mapping UI + Item Status Badges ✅
+
+#### Frontend: Manual Mapping UI
+- **ItemMappingManager Component** (`client/src/components/ItemMappingManager.tsx` v1.0)
+  - หน้าจอสำหรับ Costing Team ทำ Manual Mapping Dummy Items → D365 Items
+  - Features:
+    - แสดงรายการ Pending Mappings (GET /api/dummy-items/pending-mappings)
+    - Form สำหรับกรอก D365 Item ID พร้อม validation
+    - แสดง Dummy Item details (ID, Name, Request ID, Customer PO, Status)
+    - Success/Error feedback messages
+    - Loading states สำหรับ async operations
+    - Auto-reload pending list หลัง mapping สำเร็จ
+  - UI Layout:
+    - Section 1: Header & Description
+    - Section 2: Pending Mappings Table (Left side)
+    - Section 3: Mapping Form (Right side)
+  - API Integration:
+    - GET /api/dummy-items/pending-mappings - โหลดรายการรอ mapping
+    - POST /api/dummy-items/map-to-d365 - ทำ manual mapping
+  - Validation:
+    - D365 Item ID required (ไม่ให้ว่าง)
+    - Customer PO optional (pre-filled จาก Dummy Item)
+    - Notes optional (textarea สำหรับหมายเหตุ)
+
+- **Master Data Integration** (`client/src/pages/MasterData.tsx` v5.1 → v6.0)
+  - เพิ่ม "Item Mapping" sub-tab ใน BOQ Management tab group
+  - Navigation structure:
+    - Master Data → BOQ Management → Item Mapping (ใหม่)
+    - อยู่ระหว่าง "Create/Edit BOQ" และไม่มี sub-tab อื่น
+  - Import ItemMappingManager component
+
+#### Frontend: Item Status Badges
+- **ItemStatusBadge Component** (`client/src/components/ItemStatusBadge.tsx` v1.0)
+  - Reusable badge component แสดง itemStatus พร้อม color coding
+  - Status Configuration:
+    - 🟢 AVAILABLE (Green): `bg-green-100`, `text-green-800`, `border-green-200`
+    - 🟡 IN_USE (Yellow): `bg-yellow-100`, `text-yellow-800`, `border-yellow-200`
+    - 🔵 MAPPED (Blue): `bg-blue-100`, `text-blue-800`, `border-blue-200`
+    - ⚫ REPLACED (Gray): `bg-gray-100`, `text-gray-800`, `border-gray-200`
+    - 🟣 PRODUCTION (Purple): `bg-purple-100`, `text-purple-800`, `border-purple-200`
+  - Props:
+    - `status`: string (required) - item status
+    - `size`: 'sm' | 'md' | 'lg' (optional, default: 'md')
+    - `showIcon`: boolean (optional, default: true)
+  - Size Classes:
+    - sm: `text-xs px-2 py-0.5`
+    - md: `text-sm px-2.5 py-1`
+    - lg: `text-base px-3 py-1.5`
+
+- **BOQViewer Integration** (`client/src/components/BOQViewer.tsx` v1.0 → v1.1)
+  - เพิ่ม `itemStatus` field ใน Product interface
+  - Integration Point 1: Product List (Left sidebar)
+    - แสดง ItemStatusBadge ข้างๆ "Has BOQ" badge
+    - Size: sm
+    - Layout: `flex flex-wrap gap-2`
+  - Integration Point 2: BOQ Header (Right panel)
+    - แสดง ItemStatusBadge ข้างๆ Product Source badge
+    - Size: md
+    - Layout: `flex flex-col gap-2 items-end`
+
+- **CreateRequest Integration** (`client/src/pages/CreateRequest.tsx` v4.0 → v4.1)
+  - เพิ่ม `itemStatus` field ใน Product interface
+  - Integration Point 1: Product Search Results (Dropdown)
+    - แสดง ItemStatusBadge ทางขวาของแต่ละรายการ
+    - Size: sm
+    - Layout: `flex items-center justify-between`
+  - Integration Point 2: Selected Product Display (Blue box)
+    - แสดง ItemStatusBadge ทางขวาของข้อความ "เลือกแล้ว"
+    - Size: sm
+    - ใช้ IIFE เพื่อหา itemStatus จาก products array
+
+### Features ✨
+- ✅ **Manual Mapping Workflow**: Costing Team สามารถ map Dummy Item → D365 Item ได้ผ่าน UI
+- ✅ **Pending Mappings View**: แสดงรายการ Dummy Items ที่รอ mapping พร้อม details
+- ✅ **Form Validation**: ตรวจสอบ D365 Item ID ก่อน submit
+- ✅ **Success/Error Feedback**: แสดง message ชัดเจนหลัง mapping
+- ✅ **Auto-Reload**: รายการ pending อัปเดตอัตโนมัติหลัง mapping สำเร็จ
+- ✅ **Item Status Visibility**: แสดง status badges ทุกจุดที่แสดง Product
+- ✅ **Consistent UX**: Badge component reusable ทั่วทั้งระบบ
+- ✅ **Color-Coded Status**: แยก status ด้วยสีชัดเจน (Green/Yellow/Blue/Gray/Purple)
+- ✅ **Responsive Design**: ทำงานได้ดีทั้ง desktop และ mobile
+
+### Technical Details 🔧
+- **New Files Created** (2 files):
+  - `client/src/components/ItemMappingManager.tsx` (v1.0, 523 lines)
+  - `client/src/components/ItemStatusBadge.tsx` (v1.0, 70 lines)
+
+- **Files Modified** (3 files):
+  - `client/src/pages/MasterData.tsx` (v5.1 → v6.0, +2 lines)
+  - `client/src/components/BOQViewer.tsx` (v1.0 → v1.1, +25 lines)
+  - `client/src/pages/CreateRequest.tsx` (v4.0 → v4.1, +20 lines)
+
+- **Backend Files**: ไม่ต้องแก้ไข - Backend APIs พร้อมแล้วทั้งหมด (v5.8)
+
+- **TypeScript Status**: ✅ No compilation errors (tsc --noEmit passed)
+
+- **Dependencies**: ไม่มีการเพิ่ม dependencies ใหม่
+
+### Implementation Checklist ✅
+- ✅ สร้าง ItemStatusBadge component
+- ✅ เพิ่ม badges ใน BOQViewer (Product List + BOQ Header)
+- ✅ เพิ่ม badges ใน CreateRequest (Search Results + Selected Display)
+- ✅ สร้าง ItemMappingManager component (Manual Mapping UI)
+- ✅ เพิ่ม Item Mapping sub-tab ใน MasterData (BOQ Management)
+- ✅ TypeScript compilation ผ่าน (no errors)
+- ✅ อัปเดต CHANGELOG.md
+
+### Workflow Example 🔄
+```bash
+# 1. Costing Team เข้าหน้า Manual Mapping
+Master Data → BOQ Management → Item Mapping
+
+# 2. เห็นรายการ Dummy Items ที่รอ mapping
+GET /api/dummy-items/pending-mappings
+→ แสดง: FG-DUMMY-001 (Status: IN_USE, Request: REQ-001, PO: PO-2025-001)
+
+# 3. Costing Team เลือก FG-DUMMY-001
+→ Form แสดง Dummy Item details
+→ กรอก D365 Item ID: "D365-FG-5001"
+→ กรอก Notes: "Production created based on PO-2025-001"
+
+# 4. กดปุ่ม "Map to D365"
+POST /api/dummy-items/map-to-d365
+Body: {
+  dummyItemId: 'FG-DUMMY-001',
+  d365ItemId: 'D365-FG-5001',
+  customerPO: 'PO-2025-001',
+  notes: 'Production created based on PO-2025-001'
+}
+
+# 5. แสดง Success Message
+✅ Mapped FG-DUMMY-001 → D365-FG-5001 successfully!
+
+# 6. Reload pending list
+→ FG-DUMMY-001 หายจากรายการ (itemStatus: IN_USE → MAPPED)
+→ Badge ใน BOQViewer และ CreateRequest อัปเดตเป็น "Mapped" (สีน้ำเงิน)
+```
+
+### Benefits 🎯
+- 🎯 **Complete Phase 1**: Manual Mapping UI พร้อมใช้งาน 100%
+- 🎯 **Better UX**: Costing Team ทำ mapping ได้ง่ายผ่าน UI (ไม่ต้องใช้ API โดยตรง)
+- 🎯 **Status Visibility**: เห็น item status ชัดเจนทุกหน้าจอ
+- 🎯 **Validation**: ป้องกัน mapping ผิดพลาดด้วย form validation
+- 🎯 **Feedback**: รู้ทันทีว่า mapping สำเร็จหรือไม่
+- 🎯 **Maintainable Code**: Component reusable และ well-structured
+- 🎯 **TypeScript Safe**: ไม่มี compilation errors
+
+### Breaking Changes
+- ไม่มี breaking changes
+- ทุก features เป็น opt-in (ต้องเข้าหน้า Item Mapping เพื่อใช้งาน)
+- Backend APIs ไม่เปลี่ยนแปลง
+
+### Next Steps (Phase 2-3 - Future)
+- ⏳ Design D365 API Integration Interface
+- ⏳ Create "Ready for D365" validation endpoint
+- ⏳ Design Retry Mechanism
+- ⏳ Implement Auto-Creation API
+- ⏳ Auto-Creation UI Dashboard
+
+---
+
 ## [5.8] - 2025-10-14
 
 ### Added - Dummy Item & BOQ Lifecycle Management 🏷️

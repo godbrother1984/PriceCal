@@ -1,12 +1,13 @@
 // path: client/src/pages/PricingView.tsx
-// version: 2.0 (Use Centralized API with JWT Authentication)
-// last-modified: 14 ตุลาคม 2568 16:30
+// version: 3.9 (Add Multi-Currency Support - Display Price in Requested Currency)
+// last-modified: 24 ตุลาคม 2568 13:30
 
 import React, { useState, useEffect } from 'react';
 import api from '../services/api'; // ✅ ใช้ centralized api instance ที่มี JWT interceptor
 import eventBus, { EVENTS } from '../services/eventBus';
 import ApprovalWorkflow from '../components/ApprovalWorkflow';
 import ActivityLogs from '../components/ActivityLogs';
+import PriceCalculator from '../components/PriceCalculator'; // ✅ เพิ่ม PriceCalculator
 
 // --- Types ---
 interface PricingViewProps {
@@ -195,25 +196,24 @@ const PricingView: React.FC<PricingViewProps> = ({ requestId, onBack }) => {
     try {
       const response = await api.get(`/api/data/requests/${requestId}`);
       const requestData = response.data;
+
+      // ถ้า status เป็น Submitted (เพิ่งส่งมา) ให้เปลี่ยนเป็น Calculating
+      if (requestData.status === 'Submitted') {
+        const updatePayload = {
+          ...requestData,
+          status: 'Calculating'
+        };
+        await api.put(`/api/data/requests/${requestId}`, updatePayload);
+        requestData.status = 'Calculating'; // Update local state
+        console.log('[PricingView] Changed status from Submitted to Calculating');
+      }
+
       setRequest(requestData);
 
-      // โหลด calculationResult ถ้ามี (จากครั้งก่อน)
+      // โหลดผลการคำนวณที่บันทึกไว้ (ถ้ามี)
       if (requestData.calculationResult) {
-        try {
-          // ตรวจสอบว่า calculationResult เป็น string หรือ object
-          let parsedResult;
-          if (typeof requestData.calculationResult === 'string') {
-            parsedResult = JSON.parse(requestData.calculationResult);
-          } else {
-            parsedResult = requestData.calculationResult;
-          }
-          setCalculationResult(parsedResult);
-          console.log('[PricingView] Loaded existing calculationResult:', parsedResult);
-        } catch (err) {
-          console.error('Failed to parse calculationResult:', err);
-          // ถ้า parse ไม่ได้ให้ใช้ค่าเดิม
-          setCalculationResult(requestData.calculationResult);
-        }
+        setCalculationResult(requestData.calculationResult);
+        console.log('[PricingView] Loaded saved calculation result:', requestData.calculationResult);
       }
 
       // Initialize editable BOQ items
@@ -605,21 +605,12 @@ const PricingView: React.FC<PricingViewProps> = ({ requestId, onBack }) => {
             </span>
           </div>
         </div>
-        
-        <div className="flex gap-3">
-          <button
-            onClick={handleCalculatePrice}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Calculate Price
-          </button>
-        </div>
       </div>
 
       {/* Request Info */}
       <div className="bg-white border border-slate-200 rounded-lg p-6">
         <h3 className="text-lg font-semibold mb-4">Request Information</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
           <div>
             <label className="text-sm text-slate-600">Customer Type</label>
             <div className="flex items-center gap-2">
@@ -647,6 +638,67 @@ const PricingView: React.FC<PricingViewProps> = ({ requestId, onBack }) => {
             <p className="font-medium">{request.boqItems?.length || 0} items</p>
           </div>
         </div>
+
+        {/* Order Details Row */}
+        <div className="pt-4 border-t border-slate-200">
+          <h4 className="text-sm font-semibold text-slate-700 mb-3">รายละเอียดการสั่งซื้อ</h4>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
+              <label className="text-sm text-purple-700 font-medium">จำนวนที่ต้องการ</label>
+              <p className="text-2xl font-bold text-purple-900 mt-1">
+                {request.formData?.quantity ? Number(request.formData.quantity).toLocaleString() : 'N/A'}
+              </p>
+              <p className="text-xs text-purple-600 mt-1">ชิ้น</p>
+            </div>
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+              <label className="text-sm text-blue-700 font-medium">สกุลเงินที่ต้องการ</label>
+              <p className="text-2xl font-bold text-blue-900 mt-1">
+                {request.formData?.currency || 'N/A'}
+              </p>
+              <p className="text-xs text-blue-600 mt-1">สกุลเงินเสนอราคา</p>
+            </div>
+            <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+              <label className="text-sm text-green-700 font-medium">ราคาต่อหน่วย (เมื่อคำนวณแล้ว)</label>
+              <p className="text-2xl font-bold text-green-900 mt-1">
+                {(() => {
+                  console.log('[PricingView Order Details Card] calculationResult:', calculationResult);
+                  console.log('[PricingView Order Details Card] sellingPricePerUnitInRequestedCurrency:', calculationResult?.sellingPricePerUnitInRequestedCurrency);
+                  console.log('[PricingView Order Details Card] requestedCurrency:', calculationResult?.requestedCurrency);
+                  console.log('[PricingView Order Details Card] currency:', request.formData?.currency);
+
+                  // ✅ ใช้ sellingPricePerUnitInRequestedCurrency ถ้ามี ไม่งั้นใช้ sellingPriceThbPerUnit (backward compatibility)
+                  let pricePerUnit = calculationResult?.sellingPricePerUnitInRequestedCurrency;
+                  let currency = calculationResult?.requestedCurrency || request.formData?.currency;
+
+                  // Fallback: ถ้าไม่มี field ใหม่ ให้ใช้ field เก่า
+                  if (pricePerUnit === undefined || pricePerUnit === null) {
+                    console.log('[PricingView] Using fallback for old data format');
+                    // ถ้า currency ที่ต้องการเป็น THB หรือไม่ระบุ ใช้ sellingPriceThbPerUnit
+                    if (!currency || currency === 'THB') {
+                      pricePerUnit = calculationResult?.sellingPriceThbPerUnit;
+                      currency = 'THB';
+                    } else if (currency === 'USD') {
+                      // ถ้าต้องการ USD ใช้ sellingPricePerUnit (USD)
+                      pricePerUnit = calculationResult?.sellingPricePerUnit;
+                    } else {
+                      // สกุลเงินอื่นๆ ที่ยังไม่รองรับในข้อมูลเก่า
+                      pricePerUnit = calculationResult?.sellingPriceThbPerUnit;
+                      currency = 'THB';
+                    }
+                  }
+
+                  console.log('[PricingView] Final pricePerUnit:', pricePerUnit, 'currency:', currency);
+
+                  if (calculationResult && pricePerUnit !== undefined && pricePerUnit !== null && pricePerUnit > 0) {
+                    return `${currency} ${Number(pricePerUnit).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                  }
+                  return 'ยังไม่ได้คำนวณ';
+                })()}
+              </p>
+              <p className="text-xs text-green-600 mt-1">ราคาต่อชิ้น</p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* BOQ Items */}
@@ -661,13 +713,21 @@ const PricingView: React.FC<PricingViewProps> = ({ requestId, onBack }) => {
               <span className="ml-2 text-sm font-normal text-blue-600">(สินค้าเดิม - สามารถแก้ไข BOQ ได้)</span>
             )}
           </h3>
-          {!isEditingBOQ && (
+          {!isEditingBOQ && (request.status === 'Calculating' || request.status === 'Submitted') && (
             <button
               onClick={() => setIsEditingBOQ(true)}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
               จัดการ BOQ
             </button>
+          )}
+          {!isEditingBOQ && (request.status === 'Pending Approval' || request.status === 'Approved' || request.status === 'Rejected') && (
+            <div className="px-4 py-2 bg-gray-200 text-gray-600 rounded-lg cursor-not-allowed flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              <span>ล็อก BOQ (อนุมัติแล้ว)</span>
+            </div>
           )}
           {isEditingBOQ && (
             <div className="flex gap-2">
@@ -844,187 +904,233 @@ const PricingView: React.FC<PricingViewProps> = ({ requestId, onBack }) => {
         </div>
       )}
 
-      {/* Approval Workflow */}
-      <ApprovalWorkflow
-        requestStatus={request.status as 'Draft' | 'Pending' | 'Calculating' | 'Pending Approval' | 'Approved' | 'Rejected'}
-        readonly={false}
-        onApproveStep={(stepId, comment) => {
-          console.log(`Approved step ${stepId} with comment: ${comment}`);
-          // TODO: Implement approval logic
-        }}
-      />
-
-      {/* Master Data Section */}
-      <div className="bg-white border border-slate-200 rounded-lg p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold">Master Data Values</h3>
-          <p className="text-sm text-slate-600">Click edit icons to modify values for calculation</p>
-        </div>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-          {/* Customer Group */}
-          <MasterDataCard
-            title="Customer Group"
-            data={pricingData.customerGroup}
-            onUpdate={(data) => updateMasterData('customerGroup', data)}
+      {/* Price Calculator - Detailed Calculation */}
+      {request?.productId && (
+        <div className="mt-8">
+          <PriceCalculator
+            productId={request.productId}
+            customerId={request.customerId}
+            quantity={request.formData?.quantity ? Number(request.formData.quantity) : 1}
+            currency={request.formData?.currency || 'THB'}
+            readonly={request.status === 'Pending Approval' || request.status === 'Approved' || request.status === 'Rejected'}
+            savedResult={calculationResult}
+            onCalculationComplete={(result) => {
+              console.log('[PricingView] Price calculation completed:', result);
+              console.log('[PricingView] sellingPrice:', result.sellingPrice);
+              console.log('[PricingView] sellingPricePerUnit:', result.sellingPricePerUnit);
+              console.log('[PricingView] quantity:', result.quantity);
+              setCalculationResult(result);
+            }}
           />
-
-          {/* Fab Cost */}
-          <MasterDataCard
-            title="Fab Cost"
-            data={pricingData.fabCost}
-            onUpdate={(data) => updateMasterData('fabCost', data)}
-          />
-
-          {/* Standard Prices */}
-          <div className="bg-white border border-slate-200 rounded-lg p-4">
-            <h4 className="text-sm font-semibold text-slate-900 mb-3">Standard Prices</h4>
-            {pricingData.standardPrices.length > 0 ? (
-              <div className="space-y-2 max-h-40 overflow-y-auto">
-                {pricingData.standardPrices.slice(0, 3).map((price: any, index) => (
-                  <div key={index} className="p-2 bg-slate-50 rounded text-xs">
-                    <div className="font-medium">{price.rmName}</div>
-                    <div className="text-slate-600">{price.price} {price.currencyName}</div>
-                  </div>
-                ))}
-                {pricingData.standardPrices.length > 3 && (
-                  <div className="text-xs text-slate-500">
-                    +{pricingData.standardPrices.length - 3} more items
-                  </div>
-                )}
-              </div>
-            ) : (
-              <p className="text-sm text-slate-500">No standard prices available</p>
-            )}
-          </div>
-
-          {/* Selling Factors */}
-          <div className="bg-white border border-slate-200 rounded-lg p-4">
-            <h4 className="text-sm font-semibold text-slate-900 mb-3">Selling Factors</h4>
-            {pricingData.sellingFactors.length > 0 ? (
-              <div className="space-y-2">
-                {pricingData.sellingFactors.slice(0, 3).map((factor: any, index) => (
-                  <div key={index} className="p-2 bg-slate-50 rounded text-xs">
-                    <div className="font-medium">{factor.patternName}</div>
-                    <div className="text-slate-600">Factor: {factor.factor}</div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-slate-500">No selling factors available</p>
-            )}
-          </div>
-
-          {/* LME Prices */}
-          <div className="bg-white border border-slate-200 rounded-lg p-4">
-            <h4 className="text-sm font-semibold text-slate-900 mb-3">LME Prices</h4>
-            {pricingData.lmePrices.length > 0 ? (
-              <div className="space-y-2">
-                {pricingData.lmePrices.slice(0, 2).map((lme: any, index) => (
-                  <div key={index} className="p-2 bg-slate-50 rounded text-xs">
-                    <div className="font-medium">{lme.itemGroupName}</div>
-                    <div className="text-slate-600">{lme.price} {lme.currencyName}</div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-slate-500">No LME prices available</p>
-            )}
-          </div>
-
-          {/* Exchange Rates */}
-          <div className="bg-white border border-slate-200 rounded-lg p-4">
-            <h4 className="text-sm font-semibold text-slate-900 mb-3">Exchange Rates</h4>
-            {pricingData.exchangeRates.length > 0 ? (
-              <div className="space-y-2">
-                {pricingData.exchangeRates.slice(0, 2).map((rate: any, index) => (
-                  <div key={index} className="p-2 bg-slate-50 rounded text-xs">
-                    <div className="font-medium">
-                      {rate.sourceCurrencyName} → {rate.destinationCurrencyName}
-                    </div>
-                    <div className="text-slate-600">Rate: {rate.rate}</div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-slate-500">No exchange rates available</p>
-            )}
-          </div>
         </div>
-      </div>
+      )}
 
-      {/* Calculation Result */}
-      {calculationResult && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-green-900 mb-4">Price Calculation Result</h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="text-center">
-              <label className="text-sm text-green-700">Base Price</label>
-              <p className="text-xl font-bold text-green-900">{calculationResult.basePrice}</p>
+      {/* Action Buttons - สำหรับ Costing Team */}
+      {(request.status === 'Calculating' || request.status === 'Submitted') && (
+        <div className="mt-8 bg-white border border-slate-200 rounded-lg p-6">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-slate-600">
+              <p>บันทึกข้อมูลการคำนวณและส่งต่อเพื่อขออนุมัติ</p>
             </div>
-            <div className="text-center">
-              <label className="text-sm text-green-700">Selling Factor</label>
-              <p className="text-xl font-bold text-green-900">{calculationResult.sellingFactor}</p>
-            </div>
-            <div className="text-center">
-              <label className="text-sm text-green-700">Currency</label>
-              <p className="text-xl font-bold text-green-900">{calculationResult.currency}</p>
-            </div>
-            <div className="text-center">
-              <label className="text-sm text-green-700">Final Price</label>
-              <p className="text-2xl font-bold text-green-900">{calculationResult.finalPrice}</p>
-            </div>
-          </div>
-          
-          <div className="mt-6 flex gap-3">
-            {/* Show Calculate button for Pending status */}
-            {request?.status === 'Pending' && (
+            <div className="flex gap-3">
               <button
-                onClick={handleCalculatePrice}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                คำนวณราคา
-              </button>
-            )}
+                onClick={async () => {
+                  try {
+                    if (!calculationResult) {
+                      alert('กรุณาคำนวณราคาก่อนบันทึก');
+                      return;
+                    }
 
-            {/* Show Save Draft and Submit buttons after calculation */}
-            {request?.status === 'Calculating' && calculationResult && (
-              <>
-                <button
-                  onClick={handleSaveDraftAfterCalculation}
-                  className="px-4 py-2 border border-gray-600 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  บันทึกผลคำนวณ
-                </button>
-                <button
-                  onClick={handleSubmitForApproval}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  ส่งอนุมัติ
-                </button>
-              </>
-            )}
+                    const payload = {
+                      ...request,
+                      calculationResult: calculationResult,
+                      // ไม่เปลี่ยน status - ให้คงเป็น Calculating
+                    };
 
-            {/* Show Approve button only for Pending Approval status */}
-            {request?.status === 'Pending Approval' && (
-              <button
-                onClick={handleApprovePrice}
+                    await api.put(`/api/data/requests/${requestId}`, payload);
+                    console.log('[PricingView] Saved calculation successfully');
+                    alert('บันทึกผลการคำนวณเรียบร้อย');
+
+                    // Reload เพื่อดึงข้อมูลล่าสุด
+                    await loadRequestData();
+                  } catch (err) {
+                    console.error('[PricingView] Failed to save:', err);
+                    alert('เกิดข้อผิดพลาดในการบันทึก');
+                  }
+                }}
                 disabled={!calculationResult}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="px-6 py-2.5 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                อนุมัติราคา
+                บันทึกผลการคำนวณ
               </button>
-            )}
+              <button
+                onClick={async () => {
+                  try {
+                    if (!calculationResult) {
+                      alert('กรุณาคำนวณราคาก่อน Submit');
+                      return;
+                    }
 
-            <button
-              onClick={handleRequestRevision}
-              className="px-4 py-2 border border-orange-600 text-orange-600 rounded-lg hover:bg-orange-50 transition-colors"
-            >
-              ขอแก้ไข
-            </button>
+                    if (!confirm('ยืนยันส่งคำขอเพื่อขออนุมัติ?')) {
+                      return;
+                    }
+
+                    const payload = {
+                      ...request,
+                      calculationResult: calculationResult,
+                      status: 'Pending Approval'
+                    };
+
+                    await api.put(`/api/data/requests/${requestId}`, payload);
+                    console.log('[PricingView] Submitted for approval successfully');
+                    alert('ส่งคำขอเพื่ออนุมัติเรียบร้อย');
+
+                    // Reload เพื่อดึงข้อมูลล่าสุด
+                    await loadRequestData();
+                  } catch (err) {
+                    console.error('[PricingView] Failed to submit:', err);
+                    alert('เกิดข้อผิดพลาดในการ Submit');
+                  }
+                }}
+                disabled={!calculationResult}
+                className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Submit เพื่อขออนุมัติ
+              </button>
+            </div>
           </div>
         </div>
       )}
+
+      {/* Approval Buttons - สำหรับผู้อนุมัติ */}
+      {request.status === 'Pending Approval' && (
+        <div className="mt-8 bg-white border border-amber-200 rounded-lg p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-amber-900 mb-1">รออนุมัติราคา</h3>
+              <p className="text-sm text-amber-700">กรุณาตรวจสอบข้อมูลการคำนวณราคาและอนุมัติหรือปฏิเสธ</p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={async () => {
+                  const reason = prompt('กรุณาระบุเหตุผลในการปฏิเสธ:');
+                  if (!reason) {
+                    alert('กรุณาระบุเหตุผลในการปฏิเสธ');
+                    return;
+                  }
+
+                  if (!confirm('ยืนยันการปฏิเสธคำขอนี้?')) {
+                    return;
+                  }
+
+                  try {
+                    const payload = {
+                      ...request,
+                      status: 'Rejected',
+                      revisionReason: reason
+                    };
+
+                    await api.put(`/api/data/requests/${requestId}`, payload);
+                    console.log('[PricingView] Rejected successfully');
+                    alert('ปฏิเสธคำขอเรียบร้อย\n\nเหตุผล: ' + reason);
+
+                    // Reload เพื่อดึงข้อมูลล่าสุด
+                    await loadRequestData();
+                  } catch (err) {
+                    console.error('[PricingView] Failed to reject:', err);
+                    alert('เกิดข้อผิดพลาดในการปฏิเสธคำขอ');
+                  }
+                }}
+                className="px-6 py-2.5 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors font-medium flex items-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                ปฏิเสธ (Reject)
+              </button>
+              <button
+                onClick={async () => {
+                  if (!confirm('ยืนยันการอนุมัติราคานี้?')) {
+                    return;
+                  }
+
+                  try {
+                    const payload = {
+                      ...request,
+                      status: 'Approved',
+                      calculationResult: calculationResult
+                    };
+
+                    await api.put(`/api/data/requests/${requestId}`, payload);
+                    console.log('[PricingView] Approved successfully');
+                    alert('✅ อนุมัติราคาเรียบร้อยแล้ว');
+
+                    // Reload เพื่อดึงข้อมูลล่าสุด
+                    await loadRequestData();
+                  } catch (err) {
+                    console.error('[PricingView] Failed to approve:', err);
+                    alert('เกิดข้อผิดพลาดในการอนุมัติ');
+                  }
+                }}
+                className="px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium flex items-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                อนุมัติ (Approve)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Status Message - เมื่ออนุมัติหรือปฏิเสธแล้ว */}
+      {(request.status === 'Approved' || request.status === 'Rejected') && (
+        <div className={`mt-8 border rounded-lg p-6 ${
+          request.status === 'Approved'
+            ? 'bg-green-50 border-green-200'
+            : 'bg-red-50 border-red-200'
+        }`}>
+          <div className="flex items-center gap-3">
+            {request.status === 'Approved' ? (
+              <>
+                <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <h3 className="text-lg font-semibold text-green-900">อนุมัติแล้ว</h3>
+                  <p className="text-sm text-green-700">คำขอนี้ได้รับการอนุมัติเรียบร้อยแล้ว ไม่สามารถแก้ไขได้</p>
+                </div>
+              </>
+            ) : (
+              <>
+                <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                <div>
+                  <h3 className="text-lg font-semibold text-red-900">ถูกปฏิเสธ</h3>
+                  <p className="text-sm text-red-700">เหตุผล: {request.revisionReason || 'ไม่ระบุ'}</p>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Approval Workflow - Moved here before Activity Logs */}
+      <div className="mt-8">
+        <ApprovalWorkflow
+          requestStatus={request.status as 'Draft' | 'Submitted' | 'Calculating' | 'Priced' | 'Approved' | 'Rejected'}
+          readonly={false}
+          onApproveStep={(stepId, comment) => {
+            console.log(`Approved step ${stepId} with comment: ${comment}`);
+            // TODO: Implement approval logic
+          }}
+        />
+      </div>
 
       {/* Activity Logs Section */}
       <div className="mt-8">
