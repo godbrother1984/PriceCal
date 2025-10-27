@@ -98,19 +98,30 @@ npm run preview           # preview production build
 
 ### Database Schema (TypeORM Entities)
 - **User**: Authentication และ user management (UUID primary key)
-- **Customer**: ข้อมูลลูกค้า
+- **Customer**: ข้อมูลลูกค้า (sync จาก MongoDB)
+- **CustomerGroup**: กลุ่มลูกค้า
+- **CustomerMapping**: Map Customer → Customer Group
 - **Product**: ข้อมูลสินค้า
 - **RawMaterial**: ข้อมูลวัตถุดิบ
+- **Currency**: สกุลเงิน (THB, USD, EUR, JPY, CNY, SGD)
+- **LMEMasterData**: ราคา LME (หน่วย THB)
+- **StandardPrice**: ราคามาตรฐานวัตถุดิบ
+- **RawMaterialFabCost**: FAB Cost ของวัตถุดิบ (ใช้คู่กับ LME)
+- **FabCost**: FAB Cost ของ Product (ไม่ใช้ในการคำนวณแล้ว)
 - **PriceRequest**: คำขอราคา (nullable foreign keys)
-- **CustomerGroup**: กลุ่มลูกค้า
+- **BOQItem**: รายการ BOQ
 - **SystemConfig**: การตั้งค่าระบบ
+- **ActivityLog**: บันทึกการเปลี่ยนแปลง
 
-### Current Status (Updated 22 กันยายน 2568)
+### Current Status (Updated 27 ตุลาคม 2568)
 - ✅ Database: SQLite พร้อม TypeORM entities
 - ✅ Authentication: JWT + bcrypt (แทนที่ hardcode)
 - ✅ API Endpoints: ทำงานได้ครบทุก endpoints
-- ✅ Data Seeding: ข้อมูลหลักถูกสร้างอัตโนมัติ
-- ✅ Foreign Key Management: จัดการได้อย่างถูกต้อง
+- ✅ Data Seeding: ข้อมูลหลักถูกสร้างอัตโนมัติ (รวม Currencies)
+- ✅ Foreign Key Management: จัดการได้อย่างถูกต้อง (PRAGMA OFF/ON)
+- ✅ Currency Master Data: 6 สกุลเงิน (THB, USD, EUR, JPY, CNY, SGD)
+- ✅ LME Price: ใช้หน่วย THB (base currency)
+- ❌ FAB Cost (Product): ไม่ใช้ในการคำนวณราคาแล้ว
 - ❌ ไม่มี mock data หรือ hardcode ใดๆ แล้ว
 
 ## Testing

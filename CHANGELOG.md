@@ -42,6 +42,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
      - Copper: 324,000 THB/kg (เดิม 9,000 USD/kg)
    - ✅ เปลี่ยน status จาก 'Approved' เป็น 'Active' เพื่อให้สอดคล้องกับ query
 
+3. **Data Service** ([data.service.ts](server/src/data/data.service.ts))
+   - ✅ แก้ไข `updateStandardPrice()` method เพื่อแก้ปัญหา FK constraint error
+   - ✅ Wrap save operation ด้วย `PRAGMA foreign_keys OFF/ON`
+   - ✅ ใช้ try-finally block เพื่อความปลอดภัย
+   - **ปัญหาที่แก้**: `SQLITE_CONSTRAINT: FOREIGN KEY constraint failed` เมื่อบันทึก Standard Price หลังเลือก Currency
+
+#### Currency Data Source
+- ✅ สกุลเงินทั้ง 6 ตัวถูก seed ผ่าน `seedCurrencies()` method
+- ✅ เก็บในตาราง `currencies` (ไม่ใช่ System Config)
+- ✅ ดึงข้อมูลผ่าน API endpoint: `/api/data/currencies`
+- ✅ Frontend เรียกใช้ผ่าน SearchableSelect component
+
 #### Expected Results
 - ✅ Currency dropdown ใน Master Data แสดงข้อมูลสกุลเงินทั้ง 6 ตัว
 - ✅ ราคาที่คำนวณได้จะไม่รวม FAB Cost (Product) อีกต่อไป
@@ -51,6 +63,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 #### Files Modified
 - `server/src/price-calculation/price-calculation.service.ts` (v3.3 → v3.4)
 - `server/src/database/seeder.service.ts` (v1.2 → v1.3)
+- `server/src/data/data.service.ts` (updateStandardPrice method - lines 559-599)
+- `client/src/pages/MasterData.tsx` (v6.0 → v6.1)
 
 ## [6.2] - 2025-10-21
 
