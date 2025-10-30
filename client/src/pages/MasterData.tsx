@@ -21,6 +21,7 @@ interface Column {
   options?: Array<{ value: string; label: string }>;
   endpoint?: string;
   displayKey?: string;
+  valueKey?: string;
 }
 
 interface MasterItem {
@@ -90,14 +91,16 @@ const SearchableSelect: React.FC<{
   onChange: (value: string) => void;
   placeholder?: string;
   displayKey?: string;
+  valueKey?: string;
   disabled?: boolean;
-}> = ({ 
-  endpoint, 
-  value, 
-  onChange, 
-  placeholder = "Type to search...", 
-  displayKey = "name",
-  disabled = false
+}> = ({
+  endpoint,
+  value,
+  onChange,
+  placeholder = 'Type to search...',
+  displayKey = 'name',
+  valueKey = 'id',
+  disabled = false,
 }) => {
   const [options, setOptions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -111,6 +114,38 @@ const SearchableSelect: React.FC<{
     position: 'down'
   });
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const getOptionValue = useCallback(
+    (option: any): string => {
+      if (!option) return '';
+      if (
+        valueKey &&
+        Object.prototype.hasOwnProperty.call(option, valueKey) &&
+        option[valueKey] !== undefined &&
+        option[valueKey] !== null
+      ) {
+        return String(option[valueKey]);
+      }
+      return String(option.id ?? '');
+    },
+    [valueKey],
+  );
+
+  const buildOptionLabel = useCallback(
+    (option: any): string => {
+      if (!option) return '';
+      const optionValue = getOptionValue(option);
+      const label = option?.[displayKey];
+      const labelText = label !== undefined && label !== null ? String(label) : '';
+
+      if (labelText && labelText !== optionValue) {
+        return `${optionValue} - ${labelText}`;
+      }
+
+      return optionValue || labelText;
+    },
+    [displayKey, getOptionValue],
+  );
 
   // Load options
   const loadOptions = useCallback(async () => {
@@ -133,14 +168,16 @@ const SearchableSelect: React.FC<{
   // Update input value when value prop changes
   useEffect(() => {
     if (value && options.length > 0) {
-      const selected = options.find(opt => opt.id === value);
-      setInputValue(selected ? `${selected.id} - ${selected[displayKey]}` : value);
+      const selected = options.find(
+        (opt) => getOptionValue(opt) === value || String(opt.id ?? '') === value,
+      );
+      setInputValue(selected ? buildOptionLabel(selected) : value);
       setSearchTerm('');
     } else if (!value) {
       setInputValue('');
       setSearchTerm('');
     }
-  }, [value, options, displayKey]);
+  }, [value, options, buildOptionLabel, getOptionValue]);
 
   // Update search term when input changes
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -177,8 +214,9 @@ const SearchableSelect: React.FC<{
 
   // Handle option selection
   const handleSelect = (option: any) => {
-    onChange(option.id);
-    setInputValue(`${option.id} - ${option[displayKey]}`);
+    const optionValue = getOptionValue(option);
+    onChange(optionValue);
+    setInputValue(buildOptionLabel(option));
     setSearchTerm('');
     setIsOpen(false);
   };
@@ -189,8 +227,10 @@ const SearchableSelect: React.FC<{
       setIsOpen(false);
       // Reset to selected value if no valid selection was made
       if (value && options.length > 0) {
-        const selected = options.find(opt => opt.id === value);
-        setInputValue(selected ? `${selected.id} - ${selected[displayKey]}` : '');
+        const selected = options.find(
+          (opt) => getOptionValue(opt) === value || String(opt.id ?? '') === value,
+        );
+        setInputValue(selected ? buildOptionLabel(selected) : '');
       } else if (!value) {
         setInputValue('');
       }
@@ -209,12 +249,18 @@ const SearchableSelect: React.FC<{
   };
 
   // Filter options based on search term
-  const filteredOptions = searchTerm.length > 0 
-    ? options.filter(option =>
-        option.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        option[displayKey]?.toLowerCase().includes(searchTerm.toLowerCase())
-      )
-    : options;
+  const filteredOptions =
+    searchTerm.length > 0
+      ? options.filter((option) => {
+          const optionValue = getOptionValue(option);
+          const searchLower = searchTerm.toLowerCase();
+          return (
+            optionValue.toLowerCase().includes(searchLower) ||
+            String(option.id ?? '').toLowerCase().includes(searchLower) ||
+            String(option[displayKey] ?? '').toLowerCase().includes(searchLower)
+          );
+        })
+      : options;
 
   if (loading) {
     return (
@@ -278,16 +324,18 @@ const SearchableSelect: React.FC<{
           <div className="max-h-48 overflow-y-auto scrollbar-dropdown">
             {filteredOptions.map(option => (
               <button
-                key={option.id}
+                key={String(option.id ?? getOptionValue(option))}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => handleSelect(option)}
                 className={`w-full px-3 py-2.5 text-left text-sm hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-b-0 ${
-                  value === option.id ? 'bg-blue-50 text-blue-600' : 'text-slate-900'
+                  value === getOptionValue(option) ? 'bg-blue-50 text-blue-600' : 'text-slate-900'
                 }`}
               >
                 <div>
-                  <div className="font-medium">{option.id}</div>
-                  <div className="text-xs text-slate-500 mt-0.5">{option[displayKey] || 'N/A'}</div>
+                  <div className="font-medium">{getOptionValue(option)}</div>
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    {option[displayKey] || 'N/A'}
+                  </div>
                 </div>
               </button>
             ))}
@@ -380,13 +428,14 @@ const EditModal: React.FC<EditModalProps> = ({
                 </label>
 
                 {column.endpoint ? (
-                  <SearchableSelect
-                    endpoint={column.endpoint}
-                    value={formData[column.key] || ''}
-                    onChange={(value) => setFormData((prev: any) => ({ ...prev, [column.key]: value }))}
-                    placeholder={`Select ${column.label}`}
-                    displayKey={column.displayKey || 'name'}
-                  />
+                <SearchableSelect
+                  endpoint={column.endpoint}
+                  value={formData[column.key] || ''}
+                  onChange={(value) => setFormData((prev: any) => ({ ...prev, [column.key]: value }))}
+                  placeholder={`Select ${column.label}`}
+                  displayKey={column.displayKey || 'name'}
+                  valueKey={column.valueKey}
+                />
                 ) : column.options ? (
                   <select
                     value={formData[column.key] || ''}
@@ -623,7 +672,12 @@ const MasterDataTable: React.FC<MasterDataTableProps> = ({
                       <td key={column.key} className="px-4 py-3 text-sm text-slate-900">
                         {(() => {
                           if (column.key === 'currency' || column.key.includes('Currency')) {
-                            return item[`${column.key}Name`] || item[column.key] || 'N/A';
+                            const codeValue = item[column.key];
+                            const nameValue = item[`${column.key}Name`];
+                            if (codeValue && nameValue && nameValue !== codeValue) {
+                              return `${codeValue} (${nameValue})`;
+                            }
+                            return codeValue || nameValue || 'N/A';
                           }
                           if (column.key.includes('Name') && column.key !== 'name') {
                             return item[column.key] || item[column.key.replace('Name', '')] || 'N/A';
@@ -791,7 +845,8 @@ const FabCost: React.FC = () => {
       label: 'Currency',
       required: true,
       endpoint: 'currencies',
-      displayKey: 'code'
+      displayKey: 'code',
+      valueKey: 'code',
     },
     { key: 'description', label: 'Description', type: 'text', required: false },
     { key: 'changeReason', label: 'Change Reason', type: 'text', required: false }
@@ -1125,7 +1180,8 @@ const StandardPrices: React.FC = () => {
       label: 'Currency',
       required: true,
       endpoint: 'currencies',
-      displayKey: 'code'
+      displayKey: 'code',
+      valueKey: 'code',
     },
     { key: 'changeReason', label: 'Change Reason', type: 'text', required: false }
   ];
@@ -1805,7 +1861,8 @@ const LmePrices: React.FC = () => {
       label: 'Currency',
       required: true,
       endpoint: 'currencies',
-      displayKey: 'code'
+      displayKey: 'code',
+      valueKey: 'code',
     },
     {
       key: 'customerGroupId',
@@ -1877,7 +1934,7 @@ const MasterData: React.FC = () => {
   const tabGroups: TabGroup[] = [
     {
       id: 'mongodb',
-      label: '🔄 MongoDB Sync',
+      label: 'MongoDB Sync',
       icon: '🔄',
       subTabs: [
         { id: 'import', label: 'Import Data', component: ImportManager },
@@ -1886,7 +1943,7 @@ const MasterData: React.FC = () => {
     },
     {
       id: 'boq',
-      label: '📋 BOQ Management',
+      label: 'BOQ Management',
       icon: '📋',
       subTabs: [
         { id: 'viewBOQ', label: 'View BOQ', component: BOQViewer },
@@ -1896,7 +1953,7 @@ const MasterData: React.FC = () => {
     },
     {
       id: 'customers',
-      label: '👥 Customers',
+      label: 'Customers',
       icon: '👥',
       subTabs: [
         { id: 'customerGroups', label: 'Customer Groups', component: CustomerGroups },
@@ -1905,32 +1962,25 @@ const MasterData: React.FC = () => {
     },
     {
       id: 'pricing',
-      label: '💰 Pricing Master',
+      label: 'Pricing Master',
       icon: '💰',
       subTabs: [
         { id: 'standardPrices', label: 'Standard Prices', component: StandardPrices },
         { id: 'fabCost', label: 'Fab Costs', component: FabCost },
         { id: 'sellingFactors', label: 'Selling Factors', component: SellingFactors },
-      ]
-    },
-    {
-      id: 'market',
-      label: '💱 Market Data',
-      icon: '💱',
-      subTabs: [
         { id: 'lmePrices', label: 'LME Master Data', component: LmePrices },
         { id: 'exchangeRates', label: 'Exchange Rates', component: ExchangeRates },
       ]
     },
     {
       id: 'system',
-      label: '⚙️ System Config',
+      label: 'System Config',
       icon: '⚙️',
       component: Currencies, // Single component, no sub-tabs
     },
     {
       id: 'logs',
-      label: '📊 Activity Logs',
+      label: 'Activity Logs',
       icon: '📊',
       component: () => <ActivityLogs title="Activity Logs ทั้งหมด" />,
     },
