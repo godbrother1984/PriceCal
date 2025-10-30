@@ -55,7 +55,7 @@ export class MockDataService {
   // --- Currencies ---
   private currencies = [
     {
-      id: 'CUR-001',
+      id: 'CUR-THB',
       code: 'THB',
       name: 'Thai Baht',
       symbol: '฿',
@@ -63,7 +63,7 @@ export class MockDataService {
       ...this.addAuditFields({})
     },
     {
-      id: 'CUR-002',
+      id: 'CUR-USD',
       code: 'USD',
       name: 'US Dollar',
       symbol: '$',
@@ -71,7 +71,7 @@ export class MockDataService {
       ...this.addAuditFields({})
     },
     {
-      id: 'CUR-003',
+      id: 'CUR-EUR',
       code: 'EUR',
       name: 'Euro',
       symbol: '€',
@@ -79,7 +79,7 @@ export class MockDataService {
       ...this.addAuditFields({})
     },
     {
-      id: 'CUR-004',
+      id: 'CUR-JPY',
       code: 'JPY',
       name: 'Japanese Yen',
       symbol: '¥',
@@ -87,11 +87,11 @@ export class MockDataService {
       ...this.addAuditFields({})
     },
     {
-      id: 'CUR-005',
-      code: 'GBP',
-      name: 'British Pound',
-      symbol: '£',
-      isActive: false,
+      id: 'CUR-CNY',
+      code: 'CNY',
+      name: 'Chinese Yuan',
+      symbol: '¥',
+      isActive: true,
       ...this.addAuditFields({})
     },
   ];
@@ -161,7 +161,7 @@ export class MockDataService {
       customerGroupId: 'CG-DOM',
       customerGroupName: 'Domestic',
       costValue: 150.50,
-      currency: 'CUR-001',
+      currency: 'THB',
       currencyName: 'Thai Baht',
       ...this.addAuditFields({})
     },
@@ -173,7 +173,7 @@ export class MockDataService {
       rmId: 'RM-AL-01',
       rmName: 'Aluminum Sheet 1.2mm',
       price: 85.00,
-      currency: 'CUR-001',
+      currency: 'THB',
       currencyName: 'Thai Baht',
       ...this.addAuditFields({})
     },
@@ -182,7 +182,7 @@ export class MockDataService {
       rmId: 'RM-CU-02', 
       rmName: 'Copper Wire 0.5mm',
       price: 125.50,
-      currency: 'CUR-001',
+      currency: 'THB',
       currencyName: 'Thai Baht',
       ...this.addAuditFields({})
     },
@@ -213,7 +213,7 @@ export class MockDataService {
       itemGroupCode: 'IG-ALU',
       itemGroupName: 'Aluminum',
       price: 2850.00,
-      currency: 'CUR-002',
+      currency: 'USD',
       currencyName: 'US Dollar',
       ...this.addAuditFields({})
     },
@@ -224,9 +224,9 @@ export class MockDataService {
       id: 'ER-001',
       customerGroupId: 'CG-DOM',
       customerGroupName: 'Domestic',
-      sourceCurrency: 'CUR-002',
+      sourceCurrency: 'USD',
       sourceCurrencyName: 'US Dollar',
-      destinationCurrency: 'CUR-001',
+      destinationCurrency: 'THB',
       destinationCurrencyName: 'Thai Baht',
       rate: 35.50,
       ...this.addAuditFields({})

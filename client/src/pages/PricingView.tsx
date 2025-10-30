@@ -26,7 +26,7 @@ interface PriceRequest {
   id: string;
   customerName: string;
   productName: string;
-  status: 'Draft' | 'Pending' | 'Calculating' | 'Pending Approval' | 'Approved' | 'Rejected';
+  status: 'Draft' | 'Pending' | 'Submitted' | 'Calculating' | 'Pending Approval' | 'Approved' | 'Rejected';
   customerType: 'existing' | 'new';
   productType: 'existing' | 'new';
   formData: any;
@@ -34,6 +34,8 @@ interface PriceRequest {
   revisionReason?: string;
   calculationResult?: any;
   specialRequests?: SpecialRequest[];
+  customerId?: string;
+  productId?: string;
 }
 
 interface MasterDataItem {

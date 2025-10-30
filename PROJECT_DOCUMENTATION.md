@@ -1,8 +1,8 @@
 # PriceCal Project Documentation
 
 **Project Name**: PriceCal - ระบบคำนวณราคาสำหรับองค์กร
-**Version**: 5.8
-**Last Updated**: 15 ตุลาคม 2568
+**Version**: 7.7 (Phase 2: Customer Group Override System - Backend Complete)
+**Last Updated**: 29 ตุลาคม 2568 17:40
 **Documentation Path**: `C:\Project\PriceCal\PROJECT_DOCUMENTATION.md`
 
 ---
@@ -13,12 +13,13 @@
 2. [สถานะการพัฒนา](#สถานะการพัฒนา)
 3. [Architecture & Tech Stack](#architecture--tech-stack)
 4. [Database Schema](#database-schema)
-5. [API Endpoints](#api-endpoints)
-6. [Dummy Item & BOQ Lifecycle](#dummy-item--boq-lifecycle)
-7. [Implementation Checklist](#implementation-checklist)
-8. [ปัญหาที่พบและแนวทางแก้ไข](#ปัญหาที่พบและแนวทางแก้ไข)
-9. [Development Workflow](#development-workflow)
-10. [การติดตั้งและรันโปรเจค](#การติดตั้งและรันโปรเจค)
+5. [Entity Field Naming Standards](#entity-field-naming-standards)
+6. [API Endpoints](#api-endpoints)
+7. [Dummy Item & BOQ Lifecycle](#dummy-item--boq-lifecycle)
+8. [Implementation Checklist](#implementation-checklist)
+9. [ปัญหาที่พบและแนวทางแก้ไข](#ปัญหาที่พบและแนวทางแก้ไข)
+10. [Development Workflow](#development-workflow)
+11. [การติดตั้งและรันโปรเจค](#การติดตั้งและรันโปรเจค)
 
 ---
 
@@ -51,6 +52,235 @@ PriceCal เป็นระบบคำนวณราคาสำหรับ�
 ---
 
 ## สถานะการพัฒนา
+
+### 🔄 สถานะล่าสุด (v7.7 - Phase 2: Customer Group Override System - Backend Complete)
+
+**ภาพรวมการเปลี่ยนแปลงล่าสุด:**
+ระบบ Customer Group Override ที่ช่วยให้สามารถกำหนดราคาพิเศษสำหรับกลุ่มลูกค้าเฉพาะได้ (Backend สำเร็จ 100%)
+
+**การเปลี่ยนแปลงหลัก (v7.7):**
+
+1. **🏢 Customer Groups Module (Backend)**
+   - ✅ **customer-groups.service.ts** v1.0
+     - Generic service รองรับ 5 override types (fab-cost, selling-factor, lme-price, exchange-rate, standard-price)
+     - Customer Group CRUD operations
+     - Customer Mapping management (ลูกค้า → กลุ่ม)
+     - Override CRUD with version control (Draft → Active → Archived)
+     - Archive logic เมื่อ approve version ใหม่
+
+   - ✅ **customer-groups.controller.ts** v1.0
+     - RESTful APIs สำหรับ Customer Groups (5 endpoints)
+     - Customer Mapping APIs (3 endpoints)
+     - Generic Override APIs (6 endpoints × 5 types = 30 endpoints)
+     - ป้องกันด้วย JwtAuthGuard
+
+   - ✅ **customer-groups.module.ts** v1.0
+     - TypeORM integration กับ Override entities ทั้ง 5 ตัว
+     - Export CustomerGroupsService
+
+2. **💰 Price Calculation Integration**
+   - ✅ **price-calculation.service.ts** v3.5 → v4.0
+     - แก้ไข `getStandardPrice()` - ตรวจสอบ Override ก่อน Master Data
+     - แก้ไข `getLmePrice()` - ตรวจสอบ Override ก่อน Master Data
+     - แก้ไข `getRawMaterialFabCost()` - ตรวจสอบ Override ก่อน Master Data
+     - แก้ไข `getSellingFactor()` - ตรวจสอบ Override ก่อน Master Data
+     - แก้ไข `getExchangeRateFromThbToCurrency()` - ตรวจสอบ Override ก่อน Master Data
+
+   - ✅ **price-calculation.module.ts** v5.0 → v6.0
+     - เพิ่ม Override entities ทั้ง 5 ตัวใน TypeORM imports
+
+3. **🔄 Price Calculation Flow with Overrides**
+   ```
+   1. ตรวจสอบว่ามี customerGroupId หรือไม่
+   2. ถ้ามี → ค้นหา Override (status=Active, isActive=true)
+   3. ถ้าเจอ Override → ใช้ราคาจาก Override
+   4. ถ้าไม่เจอ → ใช้ Master Data (Global Default)
+   ```
+
+4. **📋 API Endpoints เพิ่มเติม (30+ endpoints)**
+   - Customer Group CRUD (5 endpoints)
+   - Customer Mapping (3 endpoints)
+   - Generic Override APIs (6 endpoints × 5 types)
+   - Override Types: fab-cost, selling-factor, lme-price, exchange-rate, standard-price
+
+5. **📊 Version Control for Overrides**
+   - สร้าง Override → status = Draft
+   - อนุมัติ → status = Active + Archive เก่าอัตโนมัติ
+   - แก้ไขได้เฉพาะ Draft
+   - ลบได้เฉพาะ Draft
+
+**ประโยชน์:**
+- ✅ รองรับราคาพิเศษสำหรับกลุ่มลูกค้าเฉพาะ
+- ✅ ไม่กระทบ Master Data (Global Default)
+- ✅ Version control ครบถ้วน
+- ✅ Generic API design (DRY principle)
+
+**Next Steps (Phase 2 Frontend):**
+- ⏸️ Customer Groups Management UI
+- ⏸️ Override Management Components (7 tabs)
+- ⏸️ End-to-end testing
+
+---
+
+### 🔄 สถานะก่อนหน้า (v7.6 - Entity Field Naming Standardization)
+
+**ภาพรวม:** Standardize field naming conventions across all entities และ history entities
+
+---
+
+### 🔄 สถานะก่อนหน้า (v7.5 - Standard Price Version Control Removed)
+
+**ภาพรวมการเปลี่ยนแปลงล่าสุด:**
+ลบ Version Control ออกจาก **Standard Price** เพราะเป็นข้อมูลที่ Sync จาก MongoDB (Read-Only)
+
+**การเปลี่ยนแปลงหลัก (v7.5):**
+
+1. **📊 Standard Price = Read-Only MongoDB Data**
+   - ✅ เปลี่ยน StandardPrice จาก `VersionedEntity` → `ExternalDataEntity`
+   - ✅ ลบ fields: status, version, approvedBy, effectiveFrom, effectiveTo, changeReason
+   - ✅ เหลือเฉพาะ: sourceSystem, lastSyncedAt, isActive (จาก ExternalDataEntity)
+
+2. **🗑️ ลบ Code ที่ไม่จำเป็น**
+   - ✅ ลบ `standard-price-history.entity.ts` ทั้งไฟล์
+   - ✅ ลบ methods (~400 lines): rollback, approve, update, delete, history methods
+   - ✅ ลบ API endpoints (10 endpoints)
+   - ✅ แก้ไข queries ใน dashboard.service.ts, seeder.service.ts, price-calculation.service.ts
+
+3. **🎯 ความแตกต่าง: Read-Only vs Version-Controlled Master Data**
+
+   **Read-Only (ExternalDataEntity)** - Sync from MongoDB:
+   - Customer
+   - Product
+   - RawMaterial
+   - **StandardPrice** ✨ เพิ่งย้ายมาจาก Version-Controlled
+
+   **Version-Controlled (VersionedEntity)** - User-Created:
+   - LME Master Data
+   - Exchange Rate Master Data
+   - FAB Cost
+   - Selling Factor
+   - Scrap Allowance
+
+### 🔄 สถานะก่อนหน้า (v7.0 - Customer Group-Centric System)
+
+**ภาพรวมการเปลี่ยนแปลงครั้งใหญ่:**
+ปรับโครงสร้างระบบจาก **Master Data-Centric** → **Customer Group-Centric** พร้อม Complete Snapshot System
+
+**การเปลี่ยนแปลงหลัก:**
+
+1. **🎯 Customer Group Management (All-in-One)**
+   - ✅ รวม Customer Group Mapping เข้ากับ Master Data Override
+   - ✅ UI แบบ Sidebar + Tabs รองรับ 10+ Customer Groups
+   - ✅ จัดการทุกอย่างในที่เดียว: Group Info, Customers, Overrides (LME, FAB, Factor, ExRate, StdPrice)
+
+2. **📊 Master Data = Global Default (ไม่มี Customer Group)**
+   - ✅ ลบ `customerGroupId` จาก Master Data Entities ทั้งหมด
+   - ✅ Master Data เป็นค่า Default สำหรับทุก Customer ที่ไม่มี Override
+   - ✅ ไม่มี "Default Customer Group" อีกต่อไป
+
+3. **⚡ Master Data Override System (Version Control)**
+   - ✅ สร้าง 5 Override Entities พร้อม Version Control เต็มรูปแบบ
+   - ✅ Override History (5 tables) สำหรับ Document Control
+   - ✅ Workflow: Draft → Approve → Active (เหมือน Master Data)
+   - ✅ Activate Old Version ได้ (Restore from History)
+
+4. **📸 Complete Snapshot System**
+   - ✅ บันทึกทุกอย่างลง PriceCalculationLog (Customer, Product, BOM, Master Data, Overrides)
+   - ✅ UI แบบ Progressive Disclosure (Compact → Expandable Modal)
+   - ✅ Export: JSON, PDF, Copy to Clipboard
+
+5. **🗄️ MongoDB Integration (No Mock Data)**
+   - ✅ เพิ่ม Collections: customers, products, rawMaterials, fabPatterns, itemGroups, currencies
+   - ✅ Sync Service ดึงข้อมูลจาก MongoDB
+   - ✅ ลบ Mock/Hardcode data ทั้งหมด
+
+6. **📝 Activity Log System (ครบถ้วน)**
+   - ✅ Log ทุก events: Customer Group, Override, Master Data, Calculation
+   - ✅ เก็บ Before/After (JSON Diff)
+   - ✅ Metadata: customerGroupId, version, reason, IP, User Agent
+
+**Database Schema Changes (v7.5 - Standard Price):**
+```sql
+-- v7.5: ลบ Version Control จาก Standard Price
+ALTER TABLE standard_prices DROP COLUMN status;
+ALTER TABLE standard_prices DROP COLUMN version;
+ALTER TABLE standard_prices DROP COLUMN approvedBy;
+ALTER TABLE standard_prices DROP COLUMN approvedAt;
+ALTER TABLE standard_prices DROP COLUMN effectiveFrom;
+ALTER TABLE standard_prices DROP COLUMN effectiveTo;
+ALTER TABLE standard_prices DROP COLUMN changeReason;
+
+-- v7.5: ลบ History Table
+DROP TABLE standard_price_history;
+
+-- v7.5: เพิ่ม External Data Fields (if not exist)
+-- sourceSystem, lastSyncedAt, isActive (inherited from ExternalDataEntity)
+```
+
+**Database Schema Changes (v7.0 - Customer Group):**
+```sql
+-- ลบ customerGroupId จาก Master Data
+ALTER TABLE standard_prices DROP COLUMN customerGroupId;
+ALTER TABLE lme_master_data DROP COLUMN customerGroupId;
+ALTER TABLE fab_costs DROP COLUMN customerGroupId;
+ALTER TABLE selling_factors DROP COLUMN customerGroupId;
+ALTER TABLE exchange_rate_master_data DROP COLUMN customerGroupId;
+
+-- เพิ่ม Override Tables (5 types)
+CREATE TABLE customer_group_standard_price_override (...);
+CREATE TABLE customer_group_lme_price_override (...);
+CREATE TABLE customer_group_fab_cost_override (...);
+CREATE TABLE customer_group_selling_factor_override (...);
+CREATE TABLE customer_group_exchange_rate_override (...);
+
+-- เพิ่ม Override History Tables (5 types)
+CREATE TABLE customer_group_standard_price_override_history (...);
+-- ... (4 more)
+
+-- ลบ action field จาก History Tables
+ALTER TABLE fab_cost_history DROP COLUMN action;
+ALTER TABLE selling_factor_history DROP COLUMN action;
+ALTER TABLE lme_price_history DROP COLUMN action;
+ALTER TABLE exchange_rate_history DROP COLUMN action;
+```
+
+**API Endpoints ใหม่:**
+```
+Customer Groups:
+GET    /api/customer-groups
+GET    /api/customer-groups/:id
+POST   /api/customer-groups
+PUT    /api/customer-groups/:id
+DELETE /api/customer-groups/:id
+
+Customer Mapping:
+POST   /api/customer-groups/:groupId/customers
+DELETE /api/customer-groups/:groupId/customers/:customerId
+
+Master Data Overrides (5 types):
+GET    /api/customer-groups/:groupId/overrides/:type
+GET    /api/customer-groups/:groupId/overrides/:type/:id
+POST   /api/customer-groups/:groupId/overrides/:type
+PUT    /api/customer-groups/:groupId/overrides/:type/:id
+DELETE /api/customer-groups/:groupId/overrides/:type/:id
+PUT    /api/customer-groups/:groupId/overrides/:type/:id/approve
+POST   /api/customer-groups/:groupId/overrides/:type/:id/activate-version
+
+Override History:
+GET    /api/customer-groups/:groupId/overrides/:type/:id/history
+```
+
+**UI Components ใหม่:**
+- `CustomerGroupList` (Sidebar + Search + Status)
+- `CustomerGroupTabs` (7 tabs: Info, LME, FAB, Factor, ExRate, StdPrice)
+- `OverrideCard` (Current Active + Pending Approval)
+- `VersionHistoryModal` (Document Control)
+- `SnapshotViewer` (Progressive Disclosure)
+
+**สิ่งที่ยังต้องทำ (v7.1):**
+- Migration Script สำหรับ customerGroupId ที่มีอยู่แล้ว
+- Unit Tests สำหรับ Override System
+- Performance Testing (10+ Groups)
 
 ### ✅ ทำเสร็จแล้ว (v5.0 - v5.8)
 
@@ -101,35 +331,87 @@ PriceCal เป็นระบบคำนวณราคาสำหรับ�
 - ✅ User Profile Page
 - ✅ Navigation restructure (MAIN, SYSTEM, USER sections)
 
-### 🚧 กำลังพัฒนา (Phase 1 - In Progress)
+### 🚧 Development Roadmap (6 Phases to Version 7.0)
 
-**Dummy Item & BOQ Lifecycle - Phase 1: Manual Mapping**
+#### ✅ Phase 0: Dashboard & Task Center (เสร็จแล้ว)
+- ✅ Dashboard Overview with Key Metrics
+- ✅ Task Center for Pending Actions
+- ✅ Customer Group Management UI (Sidebar + 7 Tabs)
+- ✅ Activity Log System with Filters
+
+#### 🎉 Phase 1: Document Control & Version Management (เสร็จสมบูรณ์ - 29 ตุลาคม 2568)
+- ✅ Archive Logic เมื่อ approve version ใหม่
+- ✅ Rollback/Restore Version API (4 methods - ไม่รวม Standard Price)
+- ✅ Version Control สำหรับ Master Data ทั้ง 4 ประเภท:
+  - ✅ LME Master Data (Version Control)
+  - ✅ Exchange Rate Master Data (Version Control)
+  - ✅ FAB Cost (Version Control)
+  - ✅ Selling Factor (Version Control)
+  - ❌ Standard Price (ลบ Version Control แล้ว - เป็น Read-Only MongoDB Data)
+- ✅ **Version History UI Modal** (Timeline view + Rollback button)
+- ✅ **History Button ใน Master Data Tables** (3 tables: LME, FAB, Selling Factor)
+- ✅ **Toast Notification System** (แทน alert() dialogs)
+- ✅ **API Testing** (Version History + Rollback workflow tested)
+- ✅ **Approve/Delete/Rollback Validation UI** (แสดง error messages ที่ชัดเจน)
+- ✅ **Standard Price Migration** (v7.5 - 29 ตุลาคม 2568)
+  - ✅ เปลี่ยนจาก VersionedEntity → ExternalDataEntity
+  - ✅ ลบ version control code ทั้งหมด (~400 lines)
+  - ✅ แก้ไข queries ใน 3 services
+
+**เป้าหมาย**: ให้ผู้ใช้สามารถดู version history และ restore version เก่ากลับมาใช้ได้สำหรับ User-Created Master Data ✅ **COMPLETE**
+
+#### 📝 Phase 2: UI/UX Improvements & New Features (วางแผนไว้ - 2-3 สัปดาห์)
+- ⏳ **Tab Reordering**: ย้าย LME Master Data ไว้ก่อน FAB Cost
+- ⏳ **Scrap Allowance Master Data**: ค่าเผื่อของเสีย (% ของน้ำหนัก RM) ตาม Item Group Code
+- ⏳ **Formula Constants/Variables**: ตัวแปรในสูตร (markup, overhead) พร้อม version control
+- ⏳ **Free Text Raw Material**: เพิ่ม RM แบบ free text ใน Dummy BOQ (ชื่อ, ราคา, หน่วย)
+- ⏳ **Customer Group Override System**: Override Master Data ต่อ Customer Group
+
+**เป้าหมาย**: ปรับปรุง UX และเพิ่มฟีเจอร์ใหม่ตามความต้องการของผู้ใช้
+
+#### 📝 Phase 3: Manual Mapping UI (วางแผนไว้ - 1-2 สัปดาห์)
 - ✅ Database schema พร้อม
 - ✅ Manual Mapping API พร้อม
-- ⏳ **Manual Mapping UI** (หน้าจอสำหรับ Costing Team ทำ mapping)
-- ⏳ **Item Status Badges** (แสดง status ใน BOQViewer และ CreateRequest)
+- ⏳ Item Mapping Tab ใน Master Data
+- ⏳ Pending Mappings Table + Form
+- ⏳ Item Status Badges (ทุกหน้า: BOQViewer, CreateRequest, etc.)
 
-### 📝 วางแผนไว้ (Phase 2-3 - Planned)
+**เป้าหมาย**: Costing Team สามารถ map Dummy Item → D365 Item ได้ง่าย
 
-#### Phase 2: Prepare for Auto-Creation
-- ✅ Add future fields to entities (เสร็จแล้ว)
-- ⏳ Design D365 API integration interface
-- ⏳ Create "Ready for D365" validation endpoint
-- ⏳ Create retry mechanism design
-- ⏳ Design Auto-Creation workflow
+#### 📝 Phase 4: D365 Auto-Creation Prep (วางแผนไว้ - 2-3 สัปดาห์)
+- ⏳ D365 API Service (Mock)
+- ⏳ Ready for D365 Validation Endpoint
+- ⏳ Retry Queue System Design
+- ⏳ Auto-Creation Dashboard (Mock)
+- ⏳ Error Handling & Categorization
 
-#### Phase 3: Auto-Creation (อนาคต)
-- ⏳ D365 API client service
-- ⏳ Push Item to D365 API
-- ⏳ Push BOQ to D365 API
-- ⏳ Error handling & retry logic
-- ⏳ Auto-creation UI (Dashboard แสดงสถานะการสร้างอัตโนมัติ)
+**เป้าหมาย**: เตรียมโครงสร้างสำหรับการสร้าง Item อัตโนมัติใน D365
 
-#### Future Enhancements
+#### 📝 Phase 5: Employee Entity & Production (วางแผนไว้ - 2-3 สัปดาห์)
+- ⏳ Employee Entity (sync from MongoDB)
+- ⏳ Update Audit Trail ใช้ employeeId แทน username
+- ⏳ Role-Based Access Control (RBAC)
+- ⏳ PostgreSQL Support + Docker Setup
+- ⏳ Production Deployment Preparation
+
+**เป้าหมาย**: ระบบพร้อมสำหรับ Production environment
+
+#### 📝 Phase 6: D365 Auto-Creation Production (วางแผนไว้ - 3-4 สัปดาห์)
+- ⏳ เชื่อม D365 API จริง
+- ⏳ Background Jobs (Retry Queue)
+- ⏳ Monitoring Dashboard
+- ⏳ Error Tracking & Alerting
+- ⏳ Production Deployment
+
+**เป้าหมาย**: ระบบสร้าง Item ใน D365 อัตโนมัติได้จริง
+
+**รวมเวลาประมาณ**: 13-19 สัปดาห์ (3-5 เดือน)
+
+#### Future Enhancements (หลัง Phase 6)
 - ⏳ BOQ Comparison View (เปรียบเทียบ Dummy BOQ vs Production BOQ)
 - ⏳ Warning Banners (แจ้งเตือนเมื่อใช้ Dummy Item)
-- ⏳ Retry Mechanism (Retry สำหรับ failed auto-creation)
 - ⏳ Advanced Analytics (สถิติการใช้งาน, ราคาเฉลี่ย, Margin trends)
+- ⏳ Mobile App Support
 
 ---
 
@@ -644,12 +926,246 @@ export class ActivityLog {
 ```
 
 #### 10-14. Master Data Entities
-- **StandardPrice**: ราคามาตรฐานของวัตถุดิบ
-- **LmeMasterData**: ราคา LME สำหรับโลหะ
-- **ExchangeRateMasterData**: อัตราแลกเปลี่ยน
-- **FabCost**: ต้นทุนการผลิต
-- **SellingFactor**: ตัวคูณการขาย
+
+**Read-Only MongoDB Data (ExternalDataEntity):**
+- **StandardPrice**: ราคามาตรฐานของวัตถุดิบ (Sync from MongoDB, ไม่มี version control)
+
+**Version-Controlled User Data (VersionedEntity):**
+- **LmeMasterData**: ราคา LME สำหรับโลหะ (Draft → Active → Archived)
+- **ExchangeRateMasterData**: อัตราแลกเปลี่ยน (Draft → Active → Archived)
+- **FabCost**: ต้นทุนการผลิต (Draft → Active → Archived)
+- **SellingFactor**: ตัวคูณการขาย (Draft → Active → Archived)
+- **ScrapAllowance**: ค่าเผื่อของเสีย (Draft → Active → Archived)
+
+**System Data:**
 - **SystemConfig**: การตั้งค่าระบบ
+
+---
+
+## Entity Field Naming Standards
+
+### มาตรฐานการตั้งชื่อ Field ใน Entity (Updated: 29 ตุลาคม 2568 08:00)
+
+เพื่อให้มีความสอดคล้องและง่ายต่อการบำรุงรักษา ระบบกำหนดมาตรฐานการตั้งชื่อ field ดังนี้:
+
+### 1. Base Entity Classes
+
+#### BaseEntity (ทุก Entity ควร extend)
+```typescript
+export abstract class BaseEntity {
+  @CreateDateColumn({ type: 'datetime' })
+  createdAt: Date;          // วันที่สร้าง record
+
+  @UpdateDateColumn({ type: 'datetime' })
+  updatedAt: Date;          // วันที่แก้ไข record ล่าสุด
+
+  @Column({ nullable: true })
+  createdBy: string;        // User ID ของผู้สร้าง
+
+  @Column({ nullable: true })
+  updatedBy: string;        // User ID ของผู้แก้ไขล่าสุด
+}
+```
+
+#### VersionedEntity (สำหรับ Master Data ที่ต้องการ Version Control)
+```typescript
+export abstract class VersionedEntity extends BaseEntity {
+  @Column({ default: 1 })
+  version: number;          // Version number
+
+  @Column({ default: 'Draft' })
+  status: string;           // 'Draft', 'Pending_Approval', 'Approved', 'Archived'
+
+  @Column({ nullable: true })
+  approvedBy: string;       // User ID ของผู้อนุมัติ
+
+  @Column({ type: 'datetime', nullable: true })
+  approvedAt: Date;         // วันที่อนุมัติ
+
+  @Column({ type: 'datetime', nullable: true })
+  effectiveFrom: Date;      // วันที่เริ่มมีผล
+
+  @Column({ type: 'datetime', nullable: true })
+  effectiveTo: Date;        // วันที่สิ้นสุด
+
+  @Column({ default: true })
+  isActive: boolean;        // สถานะการใช้งาน
+
+  @Column({ type: 'text', nullable: true })
+  changeReason: string;     // เหตุผลการเปลี่ยนแปลง
+}
+```
+
+#### ExternalDataEntity (สำหรับข้อมูลที่ Sync จาก External System)
+```typescript
+export abstract class ExternalDataEntity extends BaseEntity {
+  @Column({ nullable: true })
+  externalId: string;       // ID จากระบบภายนอก
+
+  @Column({ type: 'datetime', nullable: true })
+  lastSyncAt: Date;         // วันที่ Sync ล่าสุด
+
+  @Column({ nullable: true })
+  source: string;           // แหล่งที่มา (เช่น 'D365_API', 'LME_API', 'MONGODB')
+
+  @Column({ nullable: true })
+  dataSource: string;       // ประเภทแหล่งข้อมูล: 'REST_API' หรือ 'MONGODB'
+
+  @Column({ default: true })
+  isActive: boolean;        // สถานะการใช้งาน
+}
+```
+
+### 2. History Entity Standards
+
+History entities ใช้สำหรับเก็บประวัติการเปลี่ยนแปลงของ Master Data ที่มี Version Control
+
+**โครงสร้างมาตรฐาน:**
+```typescript
+@Entity('table_name_history')
+export class EntityNameHistory {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  // Reference to Main Entity
+  @Column({ nullable: true })
+  entityId: string;         // เช่น fabCostId, sellingFactorId, lmePriceId
+
+  // Version Information
+  @Column({ nullable: true })
+  version: number;
+
+  // ทุก field จาก Main Entity ที่ต้องการเก็บ history
+  // ... (copy จาก main entity)
+
+  // Approval Information (snapshot)
+  @Column({ nullable: true })
+  status: string;
+
+  @Column({ nullable: true })
+  approvedBy: string;
+
+  @Column({ type: 'datetime', nullable: true })
+  approvedAt: Date;
+
+  @Column({ type: 'datetime', nullable: true })
+  effectiveFrom: Date;
+
+  @Column({ type: 'datetime', nullable: true })
+  effectiveTo: Date;
+
+  // History Metadata (ใช้ createdBy/createdAt เหมือน BaseEntity)
+  @Column({ nullable: true })
+  createdBy: string;        // ⚠️ User ID ของผู้สร้าง history record นี้
+
+  @CreateDateColumn()
+  createdAt: Date;          // ⚠️ วันที่สร้าง history record นี้
+
+  @Column({ type: 'text', nullable: true })
+  changeReason: string;
+}
+```
+
+**หลักการสำคัญ:**
+1. ✅ **ใช้ `createdBy` และ `createdAt`** - ไม่ใช้ `changedBy` หรือ `changedAt`
+2. ✅ **ห้ามมี fields ที่ไม่มีใน Main Entity** - เช่น `priceDate`, `source` (ยกเว้น metadata fields)
+3. ✅ **ต้องมี `description` ถ้า Main Entity มี** - ให้เก็บ snapshot ครบถ้วน
+
+### 3. ตัวอย่าง Entity ที่ใช้ Base Classes
+
+**Read-Only Entities (ExternalDataEntity):**
+- ✅ Customer - Sync จาก MongoDB
+- ✅ Product - Sync จาก MongoDB
+- ✅ RawMaterial - Sync จาก MongoDB
+- ✅ StandardPrice - Sync จาก MongoDB (ไม่มี Version Control)
+
+**Version-Controlled Entities (VersionedEntity):**
+- ✅ FabCost - พร้อม History
+- ✅ SellingFactor - พร้อม History
+- ✅ LmeMasterData - พร้อม History
+- ✅ ExchangeRateMasterData - พร้อม History
+- ✅ ScrapAllowance - พร้อม History
+
+### 4. การใช้งาน History Entities
+
+**การสร้าง History Record:**
+```typescript
+// ✅ ถูกต้อง
+private async createFabCostHistory(cost: FabCost, userId: string) {
+  const history = this.fabCostHistoryRepository.create({
+    fabCostId: cost.id,
+    version: cost.version || 1,
+    name: cost.name,
+    costPerHour: cost.costPerHour,
+    currency: cost.currency,
+    description: cost.description,
+    status: cost.status,
+    approvedBy: cost.approvedBy,
+    approvedAt: cost.approvedAt,
+    effectiveFrom: cost.effectiveFrom,
+    effectiveTo: cost.effectiveTo,
+    createdBy: userId,        // ✅ ใช้ createdBy
+    changeReason: cost.changeReason
+  });
+  await this.fabCostHistoryRepository.save(history);
+}
+
+// ❌ ผิด - ไม่ควรใช้
+// changedBy: userId  // ❌ ไม่ใช้ชื่อนี้
+// changedAt: new Date()  // ❌ ไม่ต้องกำหนด ให้ @CreateDateColumn จัดการ
+```
+
+### 5. Field Naming Conventions
+
+**ชื่อ Field ที่ควรใช้:**
+| Concept | Correct ✅ | Incorrect ❌ |
+|---------|-----------|-------------|
+| วันที่สร้าง | `createdAt` | `created`, `createDate` |
+| วันที่แก้ไข | `updatedAt` | `updated`, `modifiedAt` |
+| ผู้สร้าง | `createdBy` | `creator`, `changedBy` |
+| ผู้แก้ไข | `updatedBy` | `modifier`, `changedBy` |
+| วันที่อนุมัติ | `approvedAt` | `approvalDate`, `approveDate` |
+| ผู้อนุมัติ | `approvedBy` | `approver`, `approvedUser` |
+| วันที่มีผล | `effectiveFrom` | `effectiveDate`, `startDate` |
+| วันที่สิ้นสุด | `effectiveTo` | `expiryDate`, `endDate` |
+| สถานะใช้งาน | `isActive` | `active`, `status` |
+| เหตุผล | `changeReason` | `reason`, `remark` |
+
+### 6. Customer Group Override History Entities
+
+Override History entities ต้องสอดคล้องกับ Main Override Entities:
+
+**ต้องมี fields เหล่านี้:**
+- `overrideId` - reference to main override record
+- `customerGroupId` - Customer Group ที่เกี่ยวข้อง
+- ทุก business fields จาก main entity
+- `description` - ถ้า main entity มี (⚠️ สำคัญ)
+- `version`, `status`, `approvedBy`, `approvedAt`
+- `effectiveFrom`, `effectiveTo`
+- `createdBy`, `createdAt` (ไม่ใช่ changedBy/changedAt)
+- `changeReason`
+
+**ห้าม fields เหล่านี้:**
+- ❌ `priceDate` - ไม่มีใน main entity
+- ❌ `source` - ไม่มีใน main entity (ยกเว้น external data entities)
+- ❌ `changedBy` - ใช้ `createdBy` แทน
+- ❌ `changedAt` - ใช้ `createdAt` แทน
+
+### 7. Checklist สำหรับการสร้าง Entity ใหม่
+
+**Main Entity:**
+- [ ] Extend จาก Base Class ที่เหมาะสม (BaseEntity, VersionedEntity, ExternalDataEntity)
+- [ ] มี Primary Key (`@PrimaryGeneratedColumn('uuid')` หรือ `@PrimaryColumn()`)
+- [ ] ระบุ `@Entity('table_name')` ตรงกับชื่อตารางใน database
+- [ ] Comment ระบุ version และวันที่แก้ไขล่าสุดที่ header
+
+**History Entity (ถ้ามี):**
+- [ ] ชื่อตาราง: `{main_table_name}_history`
+- [ ] มี field `{entityName}Id` เป็น reference
+- [ ] Copy ทุก business field จาก main entity
+- [ ] มี `createdBy` และ `createdAt` (ไม่ใช่ changedBy/changedAt)
+- [ ] ไม่มี field ที่ไม่มีใน main entity
+- [ ] มี `description` ถ้า main entity มี
 
 ---
 
@@ -832,66 +1348,233 @@ GET /api/dummy-items/pending-mappings
 
 ---
 
-## Implementation Checklist
+## Implementation Checklist (6 Phases to v7.0)
 
-### ✅ Phase 1: Manual Mapping (ปัจจุบัน)
-- ✅ **Database schema พร้อม** (Product + BOM entities v4.0)
-  - `server/src/entities/product.entity.ts` v4.0 (+15 fields)
-  - `server/src/entities/bom.entity.ts` v4.0 (+7 fields)
-- ✅ **Manual Mapping API** (POST /api/dummy-items/map-to-d365)
-  - `server/src/dummy-items/dummy-items.service.ts` v1.1
-  - `server/src/dummy-items/dummy-items.controller.ts` v1.0
-  - `server/src/dummy-items/dummy-items.module.ts` v1.1
-- ⏳ **Manual Mapping UI** (หน้าจอสำหรับ Costing Team)
-  - Location: `client/src/pages/MasterData.tsx` → Tab: "Item Mapping"
+### ✅ Phase 0: Dashboard & Task Center (เสร็จแล้ว)
+- ✅ **Dashboard Overview**
+  - Key metrics cards (Requests, Pending Approvals, etc.)
+  - Recent activity timeline
+- ✅ **Task Center**
+  - Pending tasks list with filters
+  - Quick actions
+- ✅ **Customer Group Management UI**
+  - Sidebar navigation with Customer Groups
+  - 7 Tabs: Overview, Customers, Standard Prices, LME Prices, FAB Costs, Selling Factors, Exchange Rates
+- ✅ **Activity Log System**
+  - Filter by entity type, date range, user
+  - JSON diff viewer
+
+### 🎉 Phase 1: Document Control & Version Management (เสร็จสมบูรณ์ - 28 ตุลาคม 2568)
+
+**Backend (เสร็จแล้ว 100%):**
+- ✅ **Archive Logic** (`server/src/data/data.service.ts` v3.11)
+  - Auto-archive Active versions เมื่อ approve version ใหม่
+- ✅ **Rollback/Restore API** (5 endpoints)
+  - `POST /api/data/standard-prices/rollback/:id`
+  - `POST /api/data/fab-costs/rollback/:id`
+  - `POST /api/data/selling-factors/rollback/:id`
+  - `POST /api/data/lme-master-data/rollback/:id`
+  - `POST /api/data/exchange-rate-master-data/rollback/:id`
+- ✅ **Version Control Validation**
+  - BadRequestException สำหรับ invalid operations
+  - Prevent approve Active records
+  - Prevent delete Active/Archived records (only Draft can be deleted)
+  - Only rollback from Archived versions
+
+**Frontend (เสร็จแล้ว 100%):**
+- ✅ **Version History UI Modal** (`client/src/components/VersionHistoryModal.tsx` v1.2)
+  - Timeline view พร้อม version dots (Draft → Active → Archived)
+  - แสดง metadata: version, status, approvedBy, effectiveDate, changeReason
+  - Rollback button สำหรับ Archived versions พร้อม confirmation
+  - Visual indicators: Status badges, colors, icons (lucide-react)
+  - Thai Buddhist calendar date formatting
+  - Error/Loading states
+  - ✅ Toast notifications แทน alert() (success/error)
+- ✅ **History Button Integration** (`client/src/pages/MasterData.tsx` v7.1)
+  - เพิ่ม History button ใน 3 Master Data tables: FAB Cost, Standard Price, Selling Factor
+  - เปิด VersionHistoryModal เมื่อคลิก
+  - Refresh data หลัง rollback สำเร็จ
+- ✅ **Centralized API Methods** (`client/src/services/api.ts` v4.0)
+  - `getVersionHistory(dataType, recordId)` - ดึง version history
+  - `approveVersion(dataType, recordId, username)` - Approve Draft → Active
+  - `rollbackVersion(dataType, recordId, username)` - Rollback Archived → Draft ใหม่
+  - `archiveVersion(dataType, recordId, username)` - Archive Active manually
+  - JWT token injection อัตโนมัติผ่าน interceptor
+  - Error response handling (axios)
+- ✅ **Toast Notification System** (NEW - v7.2)
+  - `client/src/components/Toast.tsx` (v1.0) - 4 toast types พร้อม auto-dismiss
+  - `client/src/contexts/ToastContext.tsx` (v1.0) - Global toast state management
+  - `client/src/index.css` (v1.2) - CSS animations (slide-in-right)
+  - `client/src/App.tsx` (v3.1) - ToastProvider integration
+  - Helper methods: `success()`, `error()`, `warning()`, `info()`
+  - Fixed positioning (top-right, z-index 9999)
+  - Toast queue management (multiple toasts can stack)
+- ✅ **Dependencies**
+  - ติดตั้ง `lucide-react` สำหรับ icons
+
+**Testing (เสร็จแล้ว 100%):**
+- ✅ **API Testing Scripts**
+  - `test-version-history.js` - ทดสอบ Login, Selling Factors, Version History APIs
+  - `test-rollback-archived.js` - ทดสอบ Rollback workflow แบบ end-to-end
+- ✅ **Test Results**
+  - Login API: ✅ JWT token generation ทำงานได้
+  - Selling Factors API: ✅ ดึงข้อมูล version ต่างๆ ได้ครบถ้วน (4 records, 3 patterns)
+  - Version History API: ✅ แสดง version history ได้ถูกต้อง
+  - Rollback API: ✅ ทดสอบสำเร็จ
+    - BEFORE: STD v4 (Active), v3 (Archived)
+    - Rollback v3 → สร้าง v5 (Active) พร้อม factor = 2.5
+    - AFTER: STD v5 (Active), v4 (Archived), v3 (Archived)
+    - changeReason: "Rolled back from version 3"
+
+**Files Created/Modified:**
+- ✅ `client/src/components/VersionHistoryModal.tsx` (v1.2 - Toast integration)
+- ✅ `client/src/components/Toast.tsx` (NEW - v1.0)
+- ✅ `client/src/contexts/ToastContext.tsx` (NEW - v1.0)
+- ✅ `client/src/pages/MasterData.tsx` (v7.1)
+- ✅ `client/src/services/api.ts` (v4.0)
+- ✅ `client/src/index.css` (v1.2 - Animations)
+- ✅ `client/src/App.tsx` (v3.1 - ToastProvider)
+- ✅ `server/src/data/data.service.ts` (v3.15 - Standard Price removed)
+- ✅ `server/src/data/data.controller.ts` (Standard Price endpoints removed)
+- ✅ `server/src/entities/standard-price.entity.ts` (v3.0 - ExternalDataEntity)
+- ✅ `server/src/entities/standard-price-history.entity.ts` (DELETED)
+- ✅ `server/src/app.module.ts` (StandardPriceHistory removed)
+- ✅ `server/src/dashboard/dashboard.service.ts` (v2.1)
+- ✅ `server/src/database/seeder.service.ts` (v1.4)
+- ✅ `server/src/price-calculation/price-calculation.service.ts` (v3.5)
+- ✅ `server/test-version-history.js` (NEW - Testing)
+- ✅ `server/test-rollback-archived.js` (NEW - Testing)
+
+**Status**: 🎉 **Phase 1 COMPLETE - พร้อมใช้งาน 100%** (Updated v7.5 - Standard Price migrated to Read-Only)
+
+### 📝 Phase 2: UI/UX Improvements & New Features (วางแผนไว้ - 2-3 สัปดาห์)
+
+#### 2.1 Master Data Tab Reordering
+- ⏳ **Move LME Master Data tab before FAB Cost**
+  - Location: `client/src/pages/MasterData.tsx` → Pricing Master tabs
+  - New order: LME Master Data → FAB Cost → Selling Factors → Exchange Rates
+  - Rationale: LME Price มาก่อน FAB Cost ในสูตรการคำนวณ
+
+#### 2.2 Scrap Allowance Master Data (NEW)
+- ⏳ **Database Entity** (`server/src/entities/scrap-allowance.entity.ts`)
+  - Fields: `itemGroupCode` (reference), `scrapPercentage` (decimal)
+  - Version Control: Draft → Active → Archived (เหมือน Master Data อื่นๆ)
+  - Relations: Link to D365 Item Group Code
+- ⏳ **Backend APIs** (`server/src/data/data.service.ts`)
+  - CRUD endpoints: GET, POST, PUT, DELETE
+  - Approve/Rollback workflow
+  - Version History API
+- ⏳ **Frontend UI** (`client/src/pages/MasterData.tsx`)
+  - เพิ่ม tab "Scrap Allowance" ใน Pricing Master section
+  - Form fields: Item Group Code (dropdown), Scrap % (number)
+  - Version Control UI: Draft/Active/Archived status badges
+  - History button + VersionHistoryModal integration
+- ⏳ **Price Calculation Integration**
+  - เพิ่มการคำนวณค่าเผื่อของเสีย: `RM Weight × (1 + Scrap %)`
+  - Snapshot scrapAllowance ใน PriceCalculationLog
+
+#### 2.3 Formula Constants/Variables (NEW)
+- ⏳ **Database Entity** (`server/src/entities/formula-variable.entity.ts`)
+  - Fields: `name`, `value` (number), `description`, `reason` (เหตุผล), `unit`
+  - Version Control: Draft → Active → Archived
+  - Use Case: เก็บค่าคงที่ที่ใช้ในสูตร (เช่น ค่า markup, overhead %)
+- ⏳ **Backend APIs**
+  - CRUD + Approve/Rollback
+  - GET `/api/formula-variables/active` - ดึงตัวแปรที่ Active ทั้งหมด
+- ⏳ **Frontend Management UI**
+  - Location: Settings page หรือ Master Data → Formula Variables tab
+  - Form: Name, Value, Unit, Description, Reason
+  - Version Control UI
+- ⏳ **Formula Engine Integration** (`server/src/formula-engine/`)
+  - Parser รองรับตัวแปร: `$VARIABLE_NAME` ในสูตร
+  - Inject ค่าตัวแปรจาก Database ก่อนคำนวณ
+  - Example: `(LME + FAB) * $MARKUP_FACTOR * SellingFactor`
+  - Snapshot variables ใน PriceCalculationLog
+
+#### 2.4 Free Text Raw Material in Dummy BOQ (NEW)
+- ⏳ **Database Schema Update** (`server/src/entities/bom-item.entity.ts`)
+  - เพิ่ม fields: `isFreeText` (boolean), `freeTextRmName`, `freeTextUnit`, `freeTextPrice`
+  - Make `rawMaterialId` nullable (optional when isFreeText = true)
+- ⏳ **Backend API Update** (`server/src/bom/bom.service.ts`)
+  - Support free text RM ใน POST/PUT `/api/bom`
+  - Validation: ถ้า `isFreeText = true` ต้องมี freeTextRmName, freeTextUnit, freeTextPrice
+- ⏳ **Frontend BOQ Editor UI** (`client/src/pages/CreateRequest.tsx`)
+  - Toggle switch: "Use Free Text RM" (สำหรับ Dummy Items เท่านั้น)
+  - เมื่อ Toggle ON: แสดง input fields แทน dropdown
+    - RM Name (text input)
+    - Quantity (number)
+    - Unit (text input)
+    - Price per Unit (number)
+  - เมื่อ Toggle OFF: ใช้ dropdown เลือก RM จาก Database (ปกติ)
+- ⏳ **Price Calculation Integration**
+  - คำนวณราคา Free Text RM: `Quantity × Price`
+  - Snapshot free text RM details ใน PriceCalculationLog
+
+#### 2.5 Customer Group Override System (วางแผนไว้)
+- ⏳ **Override Entities** (5 types + 5 history tables)
+  - Create entities with Version Control
+  - Relation to CustomerGroup
+- ⏳ **Override APIs** (CRUD + Approve/Rollback)
+  - Similar to Master Data APIs
+  - Nested under Customer Group endpoints
+- ⏳ **Override Management UI**
+  - Tabs ใน Customer Group Sidebar
+  - UI เหมือน Master Data แต่เฉพาะ Customer Group
+- ⏳ **Price Calculation with Overrides**
+  - Priority: Override → Global Default
+  - Snapshot both in PriceCalculationLog
+
+### 📝 Phase 3: Manual Mapping UI (วางแผนไว้)
+- ✅ **Database schema พร้อม**
+- ✅ **Manual Mapping API พร้อม**
+- ⏳ **Item Mapping Tab**
+  - Location: `client/src/pages/MasterData.tsx` → New Tab
   - Features:
-    - แสดงรายการ Pending Mappings (GET /api/dummy-items/pending-mappings)
-    - Form: Input D365 Item ID + Map button
-    - แสดง Dummy Item details (name, PO, Request ID)
+    - Pending Mappings Table
+    - Map Form (Input D365 Item ID)
     - Success/Error messages
-- ⏳ **Item Status Badges** (แสดง status ใน UI)
-  - Location: `client/src/components/BOQViewer.tsx`, `client/src/pages/CreateRequest.tsx`
-  - Badges:
-    - 🟢 AVAILABLE (Green)
-    - 🟡 IN_USE (Yellow)
-    - 🔵 MAPPED (Blue)
-    - ⚫ REPLACED (Gray)
-    - 🟣 PRODUCTION (Purple)
+- ⏳ **Item Status Badges**
+  - Location: All pages with items (BOQViewer, CreateRequest)
+  - Badges: AVAILABLE, IN_USE, MAPPED, REPLACED, PRODUCTION
 
-### 📝 Phase 2: Prepare for Auto-Creation
-- ✅ **Add future fields to entities** (เสร็จแล้ว)
-  - isPushedToD365, d365CreationDate, d365CreationMethod
-  - autoCreationFailed, autoCreationError
-- ⏳ **Design D365 API integration interface**
-  - Create D365ApiService interface
-  - Define API endpoints: /create-item, /create-bom
-  - Design authentication method (API Key, OAuth, etc.)
-- ⏳ **Create "Ready for D365" validation endpoint**
-  - GET /api/dummy-items/:id/ready-for-d365
-  - Validate: BOQ complete, Price approved, PO exists
-- ⏳ **Create retry mechanism design**
-  - Design retry strategy (exponential backoff)
-  - Error categorization (retryable vs non-retryable)
-  - Retry queue management
+### 📝 Phase 4: D365 Auto-Creation Prep (วางแผนไว้)
+- ⏳ **D365 API Service (Mock)**
+  - Interface design
+  - Mock implementation
+- ⏳ **Validation Endpoints**
+  - Ready for D365 check
+  - Prerequisites validation
+- ⏳ **Retry Queue System**
+  - Queue design
+  - Error categorization
+- ⏳ **Auto-Creation Dashboard (Mock)**
+  - Status monitoring UI
+  - Mock data
 
-### 🚀 Phase 3: Auto-Creation (อนาคต)
-- ⏳ **D365 API client service**
-  - Location: `server/src/d365/d365-api.service.ts`
-  - Methods: createItem(), createBOM(), checkItemExists()
-- ⏳ **Push Item to D365 API**
-  - POST /api/dummy-items/:id/push-to-d365
-  - Update itemStatus, isPushedToD365, d365CreationDate
-- ⏳ **Push BOQ to D365 API**
-  - POST /api/bom/:productId/push-to-d365
-  - Update bomStatus, isPushedToD365, d365BomCreationDate
-- ⏳ **Error handling & retry logic**
-  - Implement retry mechanism
-  - Log errors to ActivityLog
-  - Update autoCreationFailed, autoCreationError
-- ⏳ **Auto-creation UI**
-  - Dashboard: แสดงสถานะการสร้างอัตโนมัติ
-  - Retry button สำหรับ failed items
-  - History log
+### 📝 Phase 5: Employee Entity & Production (วางแผนไว้)
+- ⏳ **Employee Entity**
+  - Sync from MongoDB
+  - Update Audit Trail
+- ⏳ **RBAC**
+  - Role-based permissions
+  - Access control
+- ⏳ **PostgreSQL Support**
+  - Migration scripts
+  - Docker setup
+
+### 📝 Phase 6: D365 Auto-Creation Production (วางแผนไว้)
+- ⏳ **D365 API Integration (Real)**
+  - Connect to real D365 API
+  - Authentication
+- ⏳ **Background Jobs**
+  - Retry queue implementation
+  - Job scheduling
+- ⏳ **Monitoring & Alerting**
+  - Error tracking
+  - Dashboard
+- ⏳ **Production Deployment**
+  - CI/CD pipeline
+  - Production testing
 
 ---
 
@@ -1327,6 +2010,6 @@ netstat -ano | findstr :5173  # Frontend port
 
 **End of Documentation**
 
-**Last Updated**: 15 ตุลาคม 2568
-**Document Version**: 1.0
-**Project Version**: 5.8
+**Last Updated**: 29 ตุลาคม 2568
+**Document Version**: 1.1
+**Project Version**: 7.5

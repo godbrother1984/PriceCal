@@ -1,34 +1,30 @@
 // path: server/src/entities/selling-factor.entity.ts
-// version: 2.1 (Add Customer Group Relationship)
-// last-modified: 1 ตุลาคม 2568 18:45
+// version: 4.0 (Change to tubeSize - Remove pattern fields)
+// last-modified: 29 ตุลาคม 2568 23:00
 
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
 import { VersionedEntity } from './base.entity';
-import { CustomerGroup } from './customer-group.entity';
 
+/**
+ * Selling Factor Master Data (Global Default)
+ *
+ * v4.0: ใช้ tubeSize แทน patternName/patternCode
+ * tubeSize จะดึงมาจาก Product (FG) ที่ sync จาก MongoDB
+ * ใช้ CustomerGroupSellingFactorOverride สำหรับ Group-specific pricing
+ */
 @Entity('selling_factors')
 export class SellingFactor extends VersionedEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column()
-  patternName: string;
-
-  @Column()
-  patternCode: string;
+  tubeSize: string; // Tube Size from Product (FG)
 
   @Column('decimal', { precision: 5, scale: 4 })
   factor: number;
 
   @Column({ nullable: true })
-  customerGroupId: string; // FK to customer_groups
-
-  @Column({ nullable: true })
   description: string;
-
-  @ManyToOne(() => CustomerGroup)
-  @JoinColumn({ name: 'customerGroupId' })
-  customerGroup: CustomerGroup;
 
   // Note: version, status, approvedBy, approvedAt, effectiveFrom, effectiveTo,
   // isActive, changeReason, createdAt, updatedAt, createdBy, updatedBy

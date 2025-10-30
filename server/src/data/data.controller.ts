@@ -1,6 +1,6 @@
 // path: server/src/data/data.controller.ts
-// version: 2.0 (Add JWT Authentication Guard)
-// last-modified: 14 ตุลาคม 2568 15:40
+// version: 2.2 (Add Employee API Endpoint)
+// last-modified: 30 ตุลาคม 2568 00:42
 
 import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -38,6 +38,11 @@ export class DataController {
   @Get('customers')
   findAllCustomers() {
     return this.dataService.findAllCustomers();
+  }
+
+  @Get('employees')
+  findAllEmployees() {
+    return this.dataService.findAllEmployees();
   }
 
   @Get('products')
@@ -141,6 +146,12 @@ export class DataController {
     return this.dataService.approveFabCost(id);
   }
 
+  // Rollback Fab Cost to Archived Version
+  @Put('fab-costs/:id/rollback')
+  rollbackFabCost(@Param('id') id: string) {
+    return this.dataService.rollbackFabCost(id);
+  }
+
   @Put('fab-costs/:id')
   updateFabCost(@Param('id') id: string, @Body() fabCostDto: any) {
     return this.dataService.updateFabCost(id, fabCostDto);
@@ -151,51 +162,10 @@ export class DataController {
     return this.dataService.deleteFabCost(id);
   }
 
-  // --- Standard Prices ---
-  // IMPORTANT: History endpoints ต้องอยู่ก่อน :id endpoints เพื่อไม่ให้เกิด route conflict
-
-  // Get version history by rawMaterialId
-  @Get('standard-prices/history/raw-material/:rawMaterialId')
-  getStandardPriceHistory(@Param('rawMaterialId') rawMaterialId: string) {
-    return this.dataService.getStandardPriceHistory(rawMaterialId);
-  }
-
-  // Get version history by standardPriceId
-  @Get('standard-prices/history/:id')
-  getStandardPriceHistoryById(@Param('id') id: string) {
-    return this.dataService.getStandardPriceHistoryById(id);
-  }
-
+  // --- Standard Prices (Read-only from MongoDB) ---
   @Get('standard-prices')
-  findAllStandardPrices() {
+  async findAllStandardPrices() {
     return this.dataService.findAllStandardPrices();
-  }
-
-  @Post('standard-prices')
-  addStandardPrice(@Body() priceDto: any) {
-    return this.dataService.addStandardPrice(priceDto);
-  }
-
-  // Approve Standard Price
-  @Put('standard-prices/:id/approve')
-  approveStandardPrice(@Param('id') id: string) {
-    return this.dataService.approveStandardPrice(id);
-  }
-
-  // ✅ ONE-TIME FIX: Fix status for existing Standard Prices
-  @Post('standard-prices/fix-status')
-  fixStandardPricesStatus() {
-    return this.dataService.fixStandardPricesStatus();
-  }
-
-  @Put('standard-prices/:id')
-  updateStandardPrice(@Param('id') id: string, @Body() priceDto: any) {
-    return this.dataService.updateStandardPrice(id, priceDto);
-  }
-
-  @Delete('standard-prices/:id')
-  deleteStandardPrice(@Param('id') id: string) {
-    return this.dataService.deleteStandardPrice(id);
   }
 
   // --- Selling Factors ---
@@ -219,6 +189,12 @@ export class DataController {
   @Put('selling-factors/:id/approve')
   approveSellingFactor(@Param('id') id: string) {
     return this.dataService.approveSellingFactor(id);
+  }
+
+  // Rollback Selling Factor to Archived Version
+  @Put('selling-factors/:id/rollback')
+  rollbackSellingFactor(@Param('id') id: string) {
+    return this.dataService.rollbackSellingFactor(id);
   }
 
   @Put('selling-factors/:id')
@@ -274,6 +250,12 @@ export class DataController {
   }
 
   // --- LME Master Data (for calculation) ---
+  // Get LME Master Data version history (MUST be before :id route)
+  @Get('lme-master-data/history/:id')
+  getLmeMasterDataHistory(@Param('id') id: string) {
+    return this.dataService.getLmeMasterDataHistory(id);
+  }
+
   @Get('lme-master-data')
   findAllLmeMasterData() {
     return this.dataService.findAllLmeMasterData();
@@ -282,6 +264,18 @@ export class DataController {
   @Post('lme-master-data')
   addLmeMasterData(@Body() lmeDto: any) {
     return this.dataService.addLmeMasterData(lmeDto);
+  }
+
+  // Approve LME Master Data
+  @Put('lme-master-data/:id/approve')
+  approveLmeMasterData(@Param('id') id: string) {
+    return this.dataService.approveLmeMasterData(id);
+  }
+
+  // Rollback LME Master Data to Archived Version
+  @Put('lme-master-data/:id/rollback')
+  rollbackLmeMasterData(@Param('id') id: string) {
+    return this.dataService.rollbackLmeMasterData(id);
   }
 
   @Put('lme-master-data/:id')
@@ -295,6 +289,12 @@ export class DataController {
   }
 
   // --- Exchange Rate Master Data (for calculation) ---
+  // Get Exchange Rate Master Data version history (MUST be before :id route)
+  @Get('exchange-rate-master-data/history/:id')
+  getExchangeRateMasterDataHistory(@Param('id') id: string) {
+    return this.dataService.getExchangeRateMasterDataHistory(id);
+  }
+
   @Get('exchange-rate-master-data')
   findAllExchangeRateMasterData() {
     return this.dataService.findAllExchangeRateMasterData();
@@ -303,6 +303,18 @@ export class DataController {
   @Post('exchange-rate-master-data')
   addExchangeRateMasterData(@Body() rateDto: any) {
     return this.dataService.addExchangeRateMasterData(rateDto);
+  }
+
+  // Approve Exchange Rate Master Data
+  @Put('exchange-rate-master-data/:id/approve')
+  approveExchangeRateMasterData(@Param('id') id: string) {
+    return this.dataService.approveExchangeRateMasterData(id);
+  }
+
+  // Rollback Exchange Rate Master Data to Archived Version
+  @Put('exchange-rate-master-data/:id/rollback')
+  rollbackExchangeRateMasterData(@Param('id') id: string) {
+    return this.dataService.rollbackExchangeRateMasterData(id);
   }
 
   @Put('exchange-rate-master-data/:id')
@@ -351,12 +363,8 @@ export class DataController {
   }
 
   @Get('d365-item-groups')
-  findAllD365ItemGroups() {
-    return [
-      { id: 'IG-AL', name: 'Aluminum Group', code: 'AL' },
-      { id: 'IG-CU', name: 'Copper Group', code: 'CU' },
-      { id: 'IG-ST', name: 'Steel Group', code: 'ST' }
-    ];
+  async findAllD365ItemGroups() {
+    return this.dataService.findAllItemGroups();
   }
 
   // --- System Configuration ---

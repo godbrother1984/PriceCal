@@ -47,16 +47,24 @@ interface CalculationResult {
   sellingPrice: number;
   sellingPricePerUnit: number;
   exchangeRate: number;
+  requestedCurrency?: string;
+  sellingPriceInRequestedCurrency?: number;
+  sellingPricePerUnitInRequestedCurrency?: number;
   sellingPriceThb: number;
   sellingPriceThbPerUnit: number;
   marginPercentage: number;
   marginAmount: number;
   masterDataVersions: {
     standardPriceVersion?: number;
+    standardPriceId?: string;
     exchangeRateVersion?: number;
+    exchangeRateId?: string;
     lmePriceVersion?: number;
+    lmePriceId?: string;
     fabCostVersion?: number;
+    fabCostId?: string;
     sellingFactorVersion?: number;
+    sellingFactorId?: string;
   };
   calculatedAt: string;
 }
@@ -378,17 +386,6 @@ const PriceCalculator: React.FC<PriceCalculatorProps> = ({
                       {formatCurrency(result.totalMaterialCost, 'THB')}
                     </td>
                   </tr>
-                  <tr className="hover:bg-gray-50">
-                    <td className="py-2 text-gray-700">
-                      FAB Cost (THB)
-                      <span className="ml-1 text-[10px] text-gray-500">
-                        ({formatCurrency(result.fabCostPerUnit, 'THB')} × {result.quantity})
-                      </span>
-                    </td>
-                    <td className="py-2 text-right font-mono font-semibold text-gray-900">
-                      {formatCurrency(result.fabCost, 'THB')}
-                    </td>
-                  </tr>
                   <tr className="bg-blue-50 border-t-2 border-blue-200">
                     <td className="py-2 font-bold text-blue-900">Total Cost (THB)</td>
                     <td className="py-2 text-right font-mono font-bold text-blue-900">
@@ -418,7 +415,10 @@ const PriceCalculator: React.FC<PriceCalculatorProps> = ({
                       <tr className="bg-gradient-to-r from-emerald-100 to-green-100 border-t-2 border-green-300">
                         <td className="py-3 font-bold text-green-900 text-sm">Selling Price ({result.requestedCurrency})</td>
                         <td className="py-3 text-right font-mono font-bold text-green-900 text-sm">
-                          {formatCurrency(result.sellingPriceInRequestedCurrency, result.requestedCurrency)}
+                          {formatCurrency(
+                            result.sellingPriceInRequestedCurrency ?? 0,
+                            result.requestedCurrency || 'THB'
+                          )}
                         </td>
                       </tr>
                     </>
@@ -470,17 +470,6 @@ const PriceCalculator: React.FC<PriceCalculatorProps> = ({
                     <td className="py-2 text-center">
                       <span className="inline-block px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-xs font-medium">
                         v{result.masterDataVersions?.exchangeRateVersion || 'N/A'}
-                      </span>
-                    </td>
-                  </tr>
-                  <tr className="hover:bg-gray-50">
-                    <td className="py-2 text-gray-700">FAB Cost (per unit)</td>
-                    <td className="py-2 text-right font-mono font-semibold text-gray-900">
-                      {formatCurrency(result.fabCostPerUnit, 'USD')}
-                    </td>
-                    <td className="py-2 text-center">
-                      <span className="inline-block px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-xs font-medium">
-                        v{result.masterDataVersions?.fabCostVersion || 'N/A'}
                       </span>
                     </td>
                   </tr>

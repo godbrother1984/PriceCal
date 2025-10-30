@@ -1,6 +1,6 @@
 // path: server/src/entities/fab-cost.entity.ts
-// version: 2.0 (Add Versioning with VersionedEntity)
-// last-modified: 1 ตุลาคม 2568 13:25
+// version: 2.4 (Change costPerHour to price)
+// last-modified: 30 ตุลาคม 2568 10:58
 
 import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
 import { VersionedEntity } from './base.entity';
@@ -11,10 +11,13 @@ export class FabCost extends VersionedEntity {
   id: string;
 
   @Column()
-  name: string;
+  itemGroupName: string; // Item Group Name (Aluminum, Copper, etc.)
+
+  @Column()
+  itemGroupCode: string; // Item Group Code (AL, CU, ST, etc.) to match with LME and Raw Materials
 
   @Column('decimal', { precision: 10, scale: 2 })
-  costPerHour: number;
+  price: number; // FAB Cost Price (not per hour)
 
   @Column()
   currency: string;

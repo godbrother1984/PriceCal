@@ -1,6 +1,6 @@
 // path: server/src/entities/product.entity.ts
-// version: 4.0 (Add Dummy Item Lifecycle Management)
-// last-modified: 14 ตุลาคม 2568 19:30
+// version: 5.0 (Add tubeSize field from MongoDB)
+// last-modified: 29 ตุลาคม 2568 23:00
 
 import { Entity, PrimaryColumn, Column } from 'typeorm';
 import { ExternalDataEntity } from './base.entity';
@@ -21,6 +21,9 @@ export class Product extends ExternalDataEntity {
 
   @Column({ nullable: true })
   unit: string;
+
+  @Column({ nullable: true })
+  tubeSize: string; // Tube Size from MongoDB (สำหรับ Selling Factor)
 
   @Column({ default: 'PRICECAL' })
   productSource: string; // 'D365' or 'PRICECAL' - บอกว่า Product นี้มาจากไหน

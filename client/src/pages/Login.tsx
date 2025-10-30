@@ -1,8 +1,9 @@
 // path: client/src/pages/Login.tsx
-// version: 2.0 (JWT Token Storage)
-// last-modified: 14 ตุลาคม 2568 16:15
+// version: 3.0 (Use centralized API_CONFIG)
+// last-modified: 28 ตุลาคม 2568 18:10
 
 import React, { useState } from 'react';
+import { API_CONFIG, APP_CONFIG } from '../config/env';
 
 // (ใหม่) เพิ่ม Props interface เพื่อรับฟังก์ชัน onLoginSuccess
 interface LoginProps {
@@ -18,7 +19,8 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     e.preventDefault();
     setError('');
     try {
-      const response = await fetch('http://localhost:3000/auth/login', {
+      // ✅ ใช้ API_CONFIG.getUrl() สำหรับ endpoint (แก้ที่ไฟล์ config ที่เดียวแล้วจบ)
+      const response = await fetch(API_CONFIG.getUrl(API_CONFIG.ENDPOINTS.LOGIN), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
@@ -33,8 +35,8 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
       const token = data.access_token;
 
       if (token) {
-        // ✅ เก็บ JWT token ใน localStorage
-        localStorage.setItem('authToken', token);
+        // ✅ เก็บ JWT token ใน localStorage (ใช้ key จาก config)
+        localStorage.setItem(APP_CONFIG.STORAGE_KEYS.AUTH_TOKEN, token);
         console.log('[Login] JWT token saved to localStorage');
 
         // เรียกฟังก์ชัน onLoginSuccess

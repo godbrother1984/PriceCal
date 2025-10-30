@@ -1,15 +1,17 @@
 // path: server/src/entities/exchange-rate-master-data.entity.ts
-// version: 1.0 (Exchange Rate Master Data for Calculation)
-// last-modified: 1 ตุลาคม 2568 18:55
+// version: 2.0 (Global Default - Removed customerGroupId)
+// last-modified: 29 ตุลาคม 2568 04:05
 
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
 import { VersionedEntity } from './base.entity';
-import { CustomerGroup } from './customer-group.entity';
 
 /**
- * Exchange Rate Master Data
+ * Exchange Rate Master Data (Global Default)
  * ข้อมูลอัตราแลกเปลี่ยนที่พนักงานกำหนดไว้สำหรับการคำนวณ
  * ไม่ได้เปลี่ยนแปลงทุกวัน - ใช้เป็นอัตราคงที่ในการคำนวณ
+ *
+ * v2.0: เป็น Global Default (ไม่ผูกกับ Customer Group)
+ * ใช้ CustomerGroupExchangeRateOverride สำหรับ Group-specific pricing
  */
 @Entity('exchange_rate_master_data')
 export class ExchangeRateMasterData extends VersionedEntity {
@@ -32,14 +34,7 @@ export class ExchangeRateMasterData extends VersionedEntity {
   rate: number;
 
   @Column({ nullable: true })
-  customerGroupId: string; // FK to customer_groups
-
-  @Column({ nullable: true })
   description: string;
-
-  @ManyToOne(() => CustomerGroup)
-  @JoinColumn({ name: 'customerGroupId' })
-  customerGroup: CustomerGroup;
 
   // Note: version, status, approvedBy, approvedAt, effectiveFrom, effectiveTo,
   // isActive, changeReason, createdAt, updatedAt, createdBy, updatedBy

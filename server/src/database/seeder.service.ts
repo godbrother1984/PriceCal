@@ -1,6 +1,6 @@
 // path: server/src/database/seeder.service.ts
-// version: 1.3 (Add Currency Seeding)
-// last-modified: 27 ตุลาคม 2568 16:30
+// version: 1.7 (Add ScrapAllowance seeding)
+// last-modified: 30 ตุลาคม 2568 11:15
 
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -8,6 +8,7 @@ import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from '../entities/user.entity';
 import { Customer } from '../entities/customer.entity';
+import { Employee } from '../entities/employee.entity';
 import { Product } from '../entities/product.entity';
 import { RawMaterial } from '../entities/raw-material.entity';
 import { CustomerGroup } from '../entities/customer-group.entity';
@@ -23,6 +24,7 @@ import { ExchangeRateMasterData } from '../entities/exchange-rate-master-data.en
 import { PricingFormula } from '../entities/pricing-formula.entity';
 import { PricingRule } from '../entities/pricing-rule.entity';
 import { Currency } from '../entities/currency.entity';
+import { ScrapAllowance } from '../entities/scrap-allowance.entity';
 
 @Injectable()
 export class SeederService {
@@ -31,6 +33,8 @@ export class SeederService {
     private userRepository: Repository<User>,
     @InjectRepository(Customer)
     private customerRepository: Repository<Customer>,
+    @InjectRepository(Employee)
+    private employeeRepository: Repository<Employee>,
     @InjectRepository(Product)
     private productRepository: Repository<Product>,
     @InjectRepository(RawMaterial)
@@ -61,6 +65,8 @@ export class SeederService {
     private pricingRuleRepository: Repository<PricingRule>,
     @InjectRepository(Currency)
     private currencyRepository: Repository<Currency>,
+    @InjectRepository(ScrapAllowance)
+    private scrapAllowanceRepository: Repository<ScrapAllowance>,
   ) {}
 
   async seed() {
@@ -156,11 +162,32 @@ export class SeederService {
       }
     }
 
-    // Products
+    // Products with tubeSize
     const products = [
-      { id: 'FG-001', name: 'TS-PART-001' },
-      { id: 'FG-002', name: 'HN-PART-245' },
-      { id: 'FG-003', name: 'TY-PART-889' },
+      {
+        id: 'FG-001',
+        name: 'TS-PART-001',
+        category: 'Heat Exchanger',
+        tubeSize: '1/2 inch',
+        unit: 'piece',
+        description: 'Heat exchanger tube assembly for automotive cooling system'
+      },
+      {
+        id: 'FG-002',
+        name: 'HN-PART-245',
+        category: 'Condenser',
+        tubeSize: '3/4 inch',
+        unit: 'piece',
+        description: 'AC condenser unit with copper tubes'
+      },
+      {
+        id: 'FG-003',
+        name: 'TY-PART-889',
+        category: 'Radiator',
+        tubeSize: '1 inch',
+        unit: 'piece',
+        description: 'Engine cooling radiator assembly'
+      },
     ];
 
     for (const product of products) {
@@ -170,18 +197,66 @@ export class SeederService {
       }
     }
 
-    // Raw Materials
+    // Raw Materials with category and itemGroup
     const rawMaterials = [
-      { id: 'RM-AL-01', name: 'Aluminum Sheet 1.2mm', unit: 'kg', itemGroupCode: 'AL' },
-      { id: 'RM-CU-02', name: 'Copper Wire 0.5mm', unit: 'm', itemGroupCode: 'CU' },
-      { id: 'RM-ST-03', name: 'Steel Coil 2.0mm', unit: 'kg', itemGroupCode: 'ST' },
-      { id: 'RM-PC-04', name: 'Polycarbonate Pellet', unit: 'kg', itemGroupCode: 'PC' },
+      {
+        id: 'RM-AL-01',
+        name: 'Aluminum Sheet 1.2mm',
+        category: 'Metal Sheet',
+        unit: 'kg',
+        itemGroupCode: 'AL',
+        itemGroup: 'Aluminum',
+        description: 'High-grade aluminum sheet for heat exchanger manufacturing'
+      },
+      {
+        id: 'RM-CU-02',
+        name: 'Copper Wire 0.5mm',
+        category: 'Metal Wire',
+        unit: 'm',
+        itemGroupCode: 'CU',
+        itemGroup: 'Copper',
+        description: 'Pure copper wire for electrical connections'
+      },
+      {
+        id: 'RM-ST-03',
+        name: 'Steel Coil 2.0mm',
+        category: 'Metal Coil',
+        unit: 'kg',
+        itemGroupCode: 'ST',
+        itemGroup: 'Steel',
+        description: 'Cold-rolled steel coil for structural components'
+      },
+      {
+        id: 'RM-PC-04',
+        name: 'Polycarbonate Pellet',
+        category: 'Plastic',
+        unit: 'kg',
+        itemGroupCode: 'PC',
+        itemGroup: 'Plastic',
+        description: 'Industrial-grade polycarbonate pellets for molding'
+      },
     ];
 
     for (const material of rawMaterials) {
       const exists = await this.rawMaterialRepository.findOne({ where: { id: material.id } });
       if (!exists) {
         await this.rawMaterialRepository.save(material);
+      }
+    }
+
+    // Employees
+    const employees = [
+      { empId: 'EMP001', name: 'สมชาย', surname: 'ใจดี' },
+      { empId: 'EMP002', name: 'สมหญิง', surname: 'รักสงบ' },
+      { empId: 'EMP003', name: 'วิชัย', surname: 'มั่นคง' },
+      { empId: 'EMP004', name: 'อรุณี', surname: 'สว่างไสว' },
+      { empId: 'EMP005', name: 'ประเสริฐ', surname: 'ศรีสุข' },
+    ];
+
+    for (const employee of employees) {
+      const exists = await this.employeeRepository.findOne({ where: { empId: employee.empId } });
+      if (!exists) {
+        await this.employeeRepository.save(employee);
       }
     }
 
@@ -226,25 +301,41 @@ export class SeederService {
   }
 
   private async seedPricingData() {
-    // Fab Costs
+    // Fab Costs (matched with Item Group Codes like LME)
     const fabCosts = [
       {
-        name: 'Standard Fabrication',
-        costPerHour: 150.00,
+        itemGroupName: 'Aluminum',
+        itemGroupCode: 'AL',
+        price: 150.00,
         currency: 'THB',
-        description: 'Standard manufacturing cost per hour'
+        description: 'Fabrication cost for Aluminum materials'
       },
       {
-        name: 'Complex Fabrication',
-        costPerHour: 250.00,
+        itemGroupName: 'Copper',
+        itemGroupCode: 'CU',
+        price: 200.00,
         currency: 'THB',
-        description: 'Complex manufacturing cost per hour'
+        description: 'Fabrication cost for Copper materials'
+      },
+      {
+        itemGroupName: 'Steel',
+        itemGroupCode: 'ST',
+        price: 180.00,
+        currency: 'THB',
+        description: 'Fabrication cost for Steel materials'
+      },
+      {
+        itemGroupName: 'Plastic',
+        itemGroupCode: 'PC',
+        price: 120.00,
+        currency: 'THB',
+        description: 'Fabrication cost for Plastic materials'
       }
     ];
 
     for (const fabCost of fabCosts) {
       const exists = await this.fabCostRepository.findOne({
-        where: { name: fabCost.name }
+        where: { itemGroupCode: fabCost.itemGroupCode }
       });
       if (!exists) {
         await this.fabCostRepository.save(fabCost);
@@ -252,38 +343,47 @@ export class SeederService {
     }
 
     // Standard Prices
+    // ✅ StandardPrice extends ExternalDataEntity (sync จาก MongoDB)
+    // Fields: id, rawMaterialId, price, currency, externalId, lastSyncAt, source, dataSource, isActive, createdAt, updatedAt, createdBy, updatedBy
     const standardPrices = [
       {
         rawMaterialId: 'RM-AL-01',
         price: 45.50,
         currency: 'THB',
-        effectiveFrom: new Date('2024-01-01')
+        source: 'MONGODB',
+        dataSource: 'MONGODB',
+        isActive: true
       },
       {
         rawMaterialId: 'RM-CU-02',
         price: 125.00,
         currency: 'THB',
-        effectiveFrom: new Date('2024-01-01')
+        source: 'MONGODB',
+        dataSource: 'MONGODB',
+        isActive: true
       },
       {
         rawMaterialId: 'RM-ST-03',
         price: 35.75,
         currency: 'THB',
-        effectiveFrom: new Date('2024-01-01')
+        source: 'MONGODB',
+        dataSource: 'MONGODB',
+        isActive: true
       },
       {
         rawMaterialId: 'RM-PC-04',
         price: 68.25,
         currency: 'THB',
-        effectiveFrom: new Date('2024-01-01')
+        source: 'MONGODB',
+        dataSource: 'MONGODB',
+        isActive: true
       }
     ];
 
     for (const standardPrice of standardPrices) {
       const exists = await this.standardPriceRepository.findOne({
         where: {
-          rawMaterialId: standardPrice.rawMaterialId,
-          effectiveFrom: standardPrice.effectiveFrom
+          rawMaterialId: standardPrice.rawMaterialId
         }
       });
       if (!exists) {
@@ -294,28 +394,25 @@ export class SeederService {
     // Selling Factors
     const sellingFactors = [
       {
-        patternName: 'Standard Pattern',
-        patternCode: 'STD',
+        tubeSize: '1/2 inch',
         factor: 1.25,
-        description: 'Standard selling factor 25%'
+        description: 'Standard selling factor for 1/2 inch tube'
       },
       {
-        patternName: 'Export Pattern',
-        patternCode: 'EXP',
+        tubeSize: '3/4 inch',
         factor: 1.35,
-        description: 'Export selling factor 35%'
+        description: 'Selling factor for 3/4 inch tube'
       },
       {
-        patternName: 'Premium Pattern',
-        patternCode: 'PRM',
+        tubeSize: '1 inch',
         factor: 1.50,
-        description: 'Premium selling factor 50%'
+        description: 'Premium selling factor for 1 inch tube'
       }
     ];
 
     for (const factor of sellingFactors) {
       const exists = await this.sellingFactorRepository.findOne({
-        where: { patternCode: factor.patternCode }
+        where: { tubeSize: factor.tubeSize }
       });
       if (!exists) {
         await this.sellingFactorRepository.save(factor);
@@ -433,7 +530,9 @@ export class SeederService {
     }
 
     // Exchange Rate Master Data (for calculation - employee defined)
+    // ✅ เพิ่ม THB → สกุลเงินอื่นๆ (Required สำหรับการคำนวณราคา)
     const exchangeRateMasterData = [
+      // เดิม: สกุลเงินอื่น → THB
       {
         sourceCurrencyCode: 'USD',
         sourceCurrencyName: 'US Dollar',
@@ -442,7 +541,7 @@ export class SeederService {
         rate: 36.00,
         customerGroupId: null,
         description: 'USD to THB rate for calculation',
-        status: 'Approved',
+        status: 'Active',
         effectiveFrom: new Date('2024-01-01'),
         effectiveTo: null,
         isActive: true,
@@ -456,7 +555,78 @@ export class SeederService {
         rate: 40.00,
         customerGroupId: null,
         description: 'EUR to THB rate for calculation',
-        status: 'Approved',
+        status: 'Active',
+        effectiveFrom: new Date('2024-01-01'),
+        effectiveTo: null,
+        isActive: true,
+        version: 1
+      },
+      // ✅ ใหม่: THB → สกุลเงินอื่นๆ (Required for price calculation)
+      {
+        sourceCurrencyCode: 'THB',
+        sourceCurrencyName: 'Thai Baht',
+        destinationCurrencyCode: 'USD',
+        destinationCurrencyName: 'US Dollar',
+        rate: 0.0278, // 1 / 36.00
+        customerGroupId: null,
+        description: 'THB to USD rate for calculation',
+        status: 'Active',
+        effectiveFrom: new Date('2024-01-01'),
+        effectiveTo: null,
+        isActive: true,
+        version: 1
+      },
+      {
+        sourceCurrencyCode: 'THB',
+        sourceCurrencyName: 'Thai Baht',
+        destinationCurrencyCode: 'EUR',
+        destinationCurrencyName: 'Euro',
+        rate: 0.0250, // 1 / 40.00
+        customerGroupId: null,
+        description: 'THB to EUR rate for calculation',
+        status: 'Active',
+        effectiveFrom: new Date('2024-01-01'),
+        effectiveTo: null,
+        isActive: true,
+        version: 1
+      },
+      {
+        sourceCurrencyCode: 'THB',
+        sourceCurrencyName: 'Thai Baht',
+        destinationCurrencyCode: 'JPY',
+        destinationCurrencyName: 'Japanese Yen',
+        rate: 4.20, // 1 THB = ~4.20 JPY
+        customerGroupId: null,
+        description: 'THB to JPY rate for calculation',
+        status: 'Active',
+        effectiveFrom: new Date('2024-01-01'),
+        effectiveTo: null,
+        isActive: true,
+        version: 1
+      },
+      {
+        sourceCurrencyCode: 'THB',
+        sourceCurrencyName: 'Thai Baht',
+        destinationCurrencyCode: 'CNY',
+        destinationCurrencyName: 'Chinese Yuan',
+        rate: 0.20, // 1 THB = ~0.20 CNY
+        customerGroupId: null,
+        description: 'THB to CNY rate for calculation',
+        status: 'Active',
+        effectiveFrom: new Date('2024-01-01'),
+        effectiveTo: null,
+        isActive: true,
+        version: 1
+      },
+      {
+        sourceCurrencyCode: 'THB',
+        sourceCurrencyName: 'Thai Baht',
+        destinationCurrencyCode: 'SGD',
+        destinationCurrencyName: 'Singapore Dollar',
+        rate: 0.0375, // 1 THB = ~0.0375 SGD
+        customerGroupId: null,
+        description: 'THB to SGD rate for calculation',
+        status: 'Active',
         effectiveFrom: new Date('2024-01-01'),
         effectiveTo: null,
         isActive: true,
@@ -473,6 +643,58 @@ export class SeederService {
       });
       if (!exists) {
         await this.exchangeRateMasterDataRepository.save(rateMaster);
+      }
+    }
+
+    // Scrap Allowance
+    const scrapAllowances = [
+      {
+        itemGroupName: 'Aluminum',
+        itemGroupCode: 'AL',
+        scrapPercentage: 0.05, // 5%
+        description: 'Scrap allowance for Aluminum materials',
+        status: 'Draft',
+        version: 1,
+        isActive: false
+      },
+      {
+        itemGroupName: 'Copper',
+        itemGroupCode: 'CU',
+        scrapPercentage: 0.03, // 3%
+        description: 'Scrap allowance for Copper materials',
+        status: 'Draft',
+        version: 1,
+        isActive: false
+      },
+      {
+        itemGroupName: 'Steel',
+        itemGroupCode: 'ST',
+        scrapPercentage: 0.04, // 4%
+        description: 'Scrap allowance for Steel materials',
+        status: 'Draft',
+        version: 1,
+        isActive: false
+      },
+      {
+        itemGroupName: 'Plastic',
+        itemGroupCode: 'PC',
+        scrapPercentage: 0.08, // 8%
+        description: 'Scrap allowance for Plastic materials',
+        status: 'Draft',
+        version: 1,
+        isActive: false
+      }
+    ];
+
+    for (const scrap of scrapAllowances) {
+      const exists = await this.scrapAllowanceRepository.findOne({
+        where: {
+          itemGroupCode: scrap.itemGroupCode,
+          status: scrap.status
+        }
+      });
+      if (!exists) {
+        await this.scrapAllowanceRepository.save(scrap);
       }
     }
 

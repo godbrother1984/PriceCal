@@ -1,6 +1,6 @@
 // path: server/src/entities/selling-factor-history.entity.ts
-// version: 1.0 (Selling Factor History Entity)
-// last-modified: 1 ตุลาคม 2568 17:20
+// version: 4.0 (Change to tubeSize)
+// last-modified: 29 ตุลาคม 2568 23:45
 
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
 
@@ -16,10 +16,7 @@ export class SellingFactorHistory {
   version: number; // Version number
 
   @Column({ nullable: true })
-  patternName: string;
-
-  @Column({ nullable: true })
-  patternCode: string;
+  tubeSize: string; // Tube Size from Product (FG)
 
   @Column('decimal', { precision: 5, scale: 4, nullable: true })
   factor: number;
@@ -43,14 +40,11 @@ export class SellingFactorHistory {
   effectiveTo: Date;
 
   @Column({ nullable: true })
-  changedBy: string; // User ID who made this change
+  createdBy: string; // User ID who created this history record
 
   @CreateDateColumn()
-  changedAt: Date; // When this history record was created
+  createdAt: Date; // When this history record was created
 
   @Column({ type: 'text', nullable: true })
   changeReason: string; // Reason for this change
-
-  @Column({ nullable: true })
-  action: string; // 'CREATE', 'UPDATE', 'APPROVE', 'ARCHIVE'
 }

@@ -1,6 +1,6 @@
 // path: server/src/entities/lme-price-history.entity.ts
-// version: 1.0 (LME Price History Entity)
-// last-modified: 1 ตุลาคม 2568 13:40
+// version: 3.0 (Standardize Field Names - createdBy/createdAt, Remove priceDate/source)
+// last-modified: 29 ตุลาคม 2568 08:00
 
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
 
@@ -9,31 +9,28 @@ export class LmePriceHistory {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column()
-  lmePriceId: string; // Reference to original LmePrice
-
-  @Column()
-  version: number;
-
-  @Column()
-  itemGroupName: string;
-
-  @Column()
-  itemGroupCode: string;
-
-  @Column('decimal', { precision: 10, scale: 4 })
-  price: number;
-
-  @Column()
-  currency: string;
-
-  @Column()
-  priceDate: Date;
+  @Column({ nullable: true })
+  lmePriceId: string; // Reference to original LmeMasterData
 
   @Column({ nullable: true })
-  source: string;
+  version: number;
 
-  @Column()
+  @Column({ nullable: true })
+  itemGroupName: string;
+
+  @Column({ nullable: true })
+  itemGroupCode: string;
+
+  @Column('decimal', { precision: 10, scale: 4, nullable: true })
+  price: number;
+
+  @Column({ nullable: true })
+  currency: string;
+
+  @Column({ nullable: true })
+  description: string;
+
+  @Column({ nullable: true })
   status: string;
 
   @Column({ nullable: true })
@@ -48,15 +45,12 @@ export class LmePriceHistory {
   @Column({ type: 'datetime', nullable: true })
   effectiveTo: Date;
 
-  @Column()
-  changedBy: string;
+  @Column({ nullable: true })
+  createdBy: string; // User ID who created this history record
 
   @CreateDateColumn()
-  changedAt: Date;
+  createdAt: Date; // When this history record was created
 
   @Column({ type: 'text', nullable: true })
   changeReason: string;
-
-  @Column()
-  action: string;
 }

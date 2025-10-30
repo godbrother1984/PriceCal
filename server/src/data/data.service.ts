@@ -1,11 +1,12 @@
 // path: server/src/data/data.service.ts
-// version: 2.6 (Add Default Customer Group Logic)
-// last-modified: 1 ตุลาคม 2568 18:35
+// version: 3.15 (Remove Standard Price version control - Read-only from MongoDB)
+// last-modified: 29 ตุลาคม 2568 02:45
 
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Customer } from '../entities/customer.entity';
+import { Employee } from '../entities/employee.entity';
 import { Product } from '../entities/product.entity';
 import { RawMaterial } from '../entities/raw-material.entity';
 import { PriceRequest } from '../entities/price-request.entity';
@@ -15,7 +16,7 @@ import { BOM } from '../entities/bom.entity';
 import { FabCost } from '../entities/fab-cost.entity';
 import { FabCostHistory } from '../entities/fab-cost-history.entity';
 import { StandardPrice } from '../entities/standard-price.entity';
-import { StandardPriceHistory } from '../entities/standard-price-history.entity';
+// REMOVED: StandardPriceHistory - Standard Price is read-only from MongoDB (no version control)
 import { SellingFactor } from '../entities/selling-factor.entity';
 import { SellingFactorHistory } from '../entities/selling-factor-history.entity';
 import { LmePrice } from '../entities/lme-price.entity';
@@ -32,6 +33,8 @@ export class DataService {
   constructor(
     @InjectRepository(Customer)
     private customerRepository: Repository<Customer>,
+    @InjectRepository(Employee)
+    private employeeRepository: Repository<Employee>,
     @InjectRepository(Product)
     private productRepository: Repository<Product>,
     @InjectRepository(RawMaterial)
@@ -50,8 +53,7 @@ export class DataService {
     private fabCostHistoryRepository: Repository<FabCostHistory>,
     @InjectRepository(StandardPrice)
     private standardPriceRepository: Repository<StandardPrice>,
-    @InjectRepository(StandardPriceHistory)
-    private standardPriceHistoryRepository: Repository<StandardPriceHistory>,
+    // REMOVED: standardPriceHistoryRepository - no version control for Standard Price
     @InjectRepository(SellingFactor)
     private sellingFactorRepository: Repository<SellingFactor>,
     @InjectRepository(SellingFactorHistory)
@@ -72,6 +74,147 @@ export class DataService {
     private customerMappingRepository: Repository<CustomerMapping>,
     private activityLogService: ActivityLogService,
   ) {}
+
+  private normalizeCurrencyCode(code?: string | null): string {
+    return (code || '').trim().toUpperCase();
+  }
+
+  private async ensureCurrencyCodeExists(
+    code: string | undefined,
+    context: string,
+  ): Promise<string> {
+    const normalized = this.normalizeCurrencyCode(code);
+
+    if (!normalized) {
+      throw new NotFoundException(
+        `Currency code is required for ${context}`,
+      );
+    }
+
+    let currency = await this.currencyRepository.findOne({
+      where: { code: normalized, isActive: true },
+    });
+
+    if (!currency && normalized.startsWith('CUR-') && normalized.length > 4) {
+      const fallbackCode = normalized.substring(4);
+      currency = await this.currencyRepository.findOne({
+        where: { code: fallbackCode, isActive: true },
+      });
+      if (currency) {
+        return fallbackCode;
+      }
+    }
+
+    if (!currency) {
+      throw new NotFoundException(
+        `Currency '${normalized}' not found in master data`,
+      );
+    }
+
+    return normalized;
+  }
+
+  private async ensureCurrencyCodesExist(
+    codes: Array<{ code: string | undefined; context: string }>,
+  ): Promise<string[]> {
+    return Promise.all(
+      codes.map((item) =>
+        this.ensureCurrencyCodeExists(item.code, item.context),
+      ),
+    );
+  }
+
+  private async buildCurrencyMap(): Promise<Map<string, Currency>> {
+    const currencies = await this.currencyRepository.find({
+      where: { isActive: true },
+    });
+    return new Map(
+      currencies.map((currency) => [
+        this.normalizeCurrencyCode(currency.code),
+        currency,
+      ]),
+    );
+  }
+
+  private async findCurrencyEntity(code: string): Promise<Currency | null> {
+    const normalized = this.normalizeCurrencyCode(code);
+    if (!normalized) {
+      return null;
+    }
+
+    return this.currencyRepository.findOne({
+      where: { code: normalized, isActive: true },
+    });
+  }
+
+  private async attachCurrencyMetadata<T extends { currency?: string }>(
+    records: T[],
+  ): Promise<
+    Array<
+      T & {
+        currencyCode: string | null;
+        currencyName: string | null;
+        currencySymbol: string | null;
+      }
+    >
+  > {
+    if (records.length === 0) {
+      return [];
+    }
+
+    const currencyMap = await this.buildCurrencyMap();
+
+    return records.map((record) => {
+      const code = this.normalizeCurrencyCode(record.currency ?? null);
+      const currency = code ? currencyMap.get(code) : undefined;
+
+      return {
+        ...record,
+        currency: code || null,
+        currencyCode: code || null,
+        currencyName: currency?.name ?? null,
+        currencySymbol: currency?.symbol ?? null,
+      };
+    });
+  }
+
+  private async attachExchangeRateCurrencyMetadata<
+    T extends {
+      sourceCurrencyCode: string;
+      destinationCurrencyCode: string;
+      sourceCurrencyName?: string | null;
+      destinationCurrencyName?: string | null;
+    },
+  >(records: T[]) {
+    if (records.length === 0) {
+      return [];
+    }
+
+    const currencyMap = await this.buildCurrencyMap();
+
+    return records.map((record) => {
+      const sourceCode = this.normalizeCurrencyCode(
+        record.sourceCurrencyCode,
+      );
+      const destinationCode = this.normalizeCurrencyCode(
+        record.destinationCurrencyCode,
+      );
+
+      const sourceCurrency = currencyMap.get(sourceCode);
+      const destinationCurrency = currencyMap.get(destinationCode);
+
+      return {
+        ...record,
+        sourceCurrencyCode: sourceCode,
+        destinationCurrencyCode: destinationCode,
+        sourceCurrencyName: sourceCurrency?.name ?? record.sourceCurrencyName ?? null,
+        destinationCurrencyName:
+          destinationCurrency?.name ?? record.destinationCurrencyName ?? null,
+        sourceCurrencySymbol: sourceCurrency?.symbol ?? null,
+        destinationCurrencySymbol: destinationCurrency?.symbol ?? null,
+      };
+    });
+  }
 
   // --- Price Requests ---
   async findAllRequests() {
@@ -267,12 +410,48 @@ export class DataService {
     return this.customerRepository.find({ where: { isActive: true } });
   }
 
+  async findAllEmployees() {
+    return this.employeeRepository.find({ order: { empId: 'ASC' } });
+  }
+
   async findAllProducts() {
     return this.productRepository.find({ where: { isActive: true } });
   }
 
   async findAllRawMaterials() {
     return this.rawMaterialRepository.find({ where: { isActive: true } });
+  }
+
+  // --- Item Groups (derived from Raw Materials) ---
+  async findAllItemGroups() {
+    // ดึง Item Groups ที่ unique จาก Raw Materials
+    const rawMaterials = await this.rawMaterialRepository.find({
+      where: { isActive: true },
+      select: ['itemGroupCode', 'category'],
+    });
+
+    // Extract unique item group codes และกรองที่เป็น null/undefined
+    const uniqueGroups = new Map<string, { code: string; name: string }>();
+
+    rawMaterials.forEach(rm => {
+      if (rm.itemGroupCode && !uniqueGroups.has(rm.itemGroupCode)) {
+        uniqueGroups.set(rm.itemGroupCode, {
+          code: rm.itemGroupCode,
+          name: rm.category || `${rm.itemGroupCode} Group`, // ใช้ category เป็น name, ถ้าไม่มีก็ใช้ code + "Group"
+        });
+      }
+    });
+
+    // Convert Map to array และเรียงตาม code
+    const itemGroups = Array.from(uniqueGroups.values())
+      .sort((a, b) => a.code.localeCompare(b.code))
+      .map((group, index) => ({
+        id: `IG-${group.code}`, // Generate ID format: IG-AL, IG-CU, etc.
+        code: group.code,
+        name: group.name,
+      }));
+
+    return itemGroups;
   }
 
   // --- Customer Groups ---
@@ -372,6 +551,7 @@ export class DataService {
 
   // --- Customer Mappings ---
   async findAllCustomerMappings() {
+    // CustomerMapping ยังมี customerGroup relation (ไม่เปลี่ยน)
     return this.customerMappingRepository.find({
       where: { isActive: true },
       relations: ['customer', 'customerGroup'],
@@ -412,18 +592,23 @@ export class DataService {
 
   // --- Fab Costs ---
   async findAllFabCosts() {
-    return this.fabCostRepository.find({
-      where: { isActive: true },
-      order: { createdAt: 'DESC' }
+    // Return all records (including Draft) so user can see pending changes
+    const items = await this.fabCostRepository.find({
+      order: { itemGroupCode: 'ASC', version: 'DESC', createdAt: 'DESC' }
     });
+    return this.attachCurrencyMetadata(items);
   }
 
   async addFabCost(costDto: any) {
+    const currencyCode = await this.ensureCurrencyCodeExists(
+      costDto.currencyCode ?? costDto.currency,
+      'Fab Cost',
+    );
+
     const newCost = this.fabCostRepository.create({
-      id: `FC-${Date.now()}`,
-      name: costDto.name,
-      costPerHour: costDto.costPerHour,
-      currency: costDto.currency,
+      itemGroupCode: costDto.itemGroupCode,
+      price: costDto.price,
+      currency: currencyCode,
       description: costDto.description || null,
       status: costDto.status || 'Draft',
       isActive: true,
@@ -432,7 +617,7 @@ export class DataService {
     const savedCost = await this.fabCostRepository.save(newCost);
 
     // บันทึก history
-    await this.createFabCostHistory(savedCost, 'CREATE', 'admin');
+    await this.createFabCostHistory(savedCost, 'admin');
 
     // บันทึก activity log
     await this.activityLogService.logMasterDataChanged(
@@ -457,16 +642,97 @@ export class DataService {
 
     const oldData = { ...cost };
 
-    // อัพเดท version ถ้ามีการเปลี่ยนแปลงราคา
-    if (cost.costPerHour !== costDto.costPerHour) {
-      cost.version = (cost.version || 1) + 1;
+    // Ensure currency code
+    let currencyCode = cost.currency;
+    if (costDto.currency !== undefined || costDto.currencyCode !== undefined) {
+      currencyCode = await this.ensureCurrencyCodeExists(
+        costDto.currencyCode ?? costDto.currency,
+        'Fab Cost',
+      );
     }
 
-    Object.assign(cost, costDto);
-    const savedCost = await this.fabCostRepository.save(cost);
+    // 🔥 ถ้าเป็น Draft อยู่แล้ว → Update record เดิม
+    if (cost.status === 'Draft') {
+      Object.assign(cost, {
+        itemGroupCode: costDto.itemGroupCode !== undefined ? costDto.itemGroupCode : cost.itemGroupCode,
+        price: costDto.price !== undefined ? costDto.price : cost.price,
+        currency: currencyCode,
+        description: costDto.description !== undefined ? costDto.description : cost.description,
+        updatedBy: 'admin',
+      });
+
+      const savedCost = await this.fabCostRepository.save(cost);
+
+      // บันทึก history
+      await this.createFabCostHistory(savedCost, 'admin');
+
+      // บันทึก activity log
+      await this.activityLogService.logMasterDataChanged(
+        'fab_costs',
+        savedCost.id,
+        'admin',
+        'Admin',
+        'UPDATE',
+        oldData,
+        savedCost,
+        costDto.changeReason ?? 'Updated draft version'
+      );
+
+      return savedCost;
+    }
+
+    // 🔥 ถ้าเป็น Active/Archived → ตรวจสอบว่ามี Draft อยู่แล้วหรือไม่
+    const existingDraft = await this.fabCostRepository.findOne({
+      where: {
+        itemGroupCode: cost.itemGroupCode,
+        status: 'Draft',
+      },
+    });
+
+    if (existingDraft) {
+      // Update existing Draft
+      Object.assign(existingDraft, {
+        itemGroupCode: costDto.itemGroupCode !== undefined ? costDto.itemGroupCode : existingDraft.itemGroupCode,
+        price: costDto.price !== undefined ? costDto.price : existingDraft.price,
+        currency: currencyCode,
+        description: costDto.description !== undefined ? costDto.description : existingDraft.description,
+        updatedBy: 'admin',
+      });
+
+      const savedCost = await this.fabCostRepository.save(existingDraft);
+      await this.createFabCostHistory(savedCost, 'admin');
+      await this.activityLogService.logMasterDataChanged(
+        'fab_costs',
+        savedCost.id,
+        'admin',
+        'Admin',
+        'UPDATE',
+        oldData,
+        savedCost,
+        costDto.changeReason ?? 'Updated existing draft version'
+      );
+      return savedCost;
+    }
+
+    // 🔥 ไม่มี Draft อยู่ → สร้าง Draft version ใหม่
+    const newVersion = (cost.version || 1) + 1;
+
+    const newCost = this.fabCostRepository.create({
+      itemGroupCode: costDto.itemGroupCode !== undefined ? costDto.itemGroupCode : cost.itemGroupCode,
+      price: costDto.price !== undefined ? costDto.price : cost.price,
+      currency: currencyCode,
+      description: costDto.description !== undefined ? costDto.description : cost.description,
+      status: 'Draft',
+      version: newVersion,
+      isActive: false,
+      createdBy: 'admin',
+      updatedBy: 'admin',
+    });
+
+    const savedCost = await this.fabCostRepository.save(newCost);
 
     // บันทึก history
-    await this.createFabCostHistory(savedCost, 'UPDATE', 'admin');
+    await this.createFabCostHistory(savedCost, 'admin');
 
     // บันทึก activity log
     await this.activityLogService.logMasterDataChanged(
@@ -474,22 +740,23 @@ export class DataService {
       savedCost.id,
       'admin',
       'Admin',
-      'UPDATE',
-      oldData,
+      'CREATE',
+      null,
       savedCost,
-      costDto.changeReason
+      costDto.changeReason ?? `Created new draft v${newVersion} based on v${cost.version}`
     );
 
     return savedCost;
   }
 
   // Helper method สำหรับสร้าง FabCost history record
-  private async createFabCostHistory(cost: FabCost, action: string, userId: string) {
+  private async createFabCostHistory(cost: FabCost, userId: string) {
     const history = this.fabCostHistoryRepository.create({
       fabCostId: cost.id,
       version: cost.version || 1,
-      name: cost.name,
-      costPerHour: cost.costPerHour,
+      itemGroupName: cost.itemGroupName,
+      itemGroupCode: cost.itemGroupCode,
+      price: cost.price,
       currency: cost.currency,
       description: cost.description,
       status: cost.status,
@@ -497,9 +764,8 @@ export class DataService {
       approvedAt: cost.approvedAt,
       effectiveFrom: cost.effectiveFrom,
       effectiveTo: cost.effectiveTo,
-      changedBy: userId,
-      changeReason: cost.changeReason,
-      action: action
+      createdBy: userId,
+      changeReason: cost.changeReason
     });
     await this.fabCostHistoryRepository.save(history);
   }
@@ -510,197 +776,54 @@ export class DataService {
       throw new NotFoundException(`Fab cost with ID ${id} not found`);
     }
 
-    cost.isActive = false;
-    await this.fabCostRepository.save(cost);
-    return { message: `Deleted fab cost with ID ${id}` };
+    // 🔥 ถ้าเป็น Draft → ลบได้จริงๆ
+    if (cost.status === 'Draft') {
+      await this.fabCostRepository.remove(cost);
+      return { message: `Permanently deleted Draft FAB Cost with ID ${id}` };
+    }
+
+    // 🔥 ถ้าเป็น Active หรือ Archived → ห้ามลบ
+    throw new BadRequestException(`Cannot delete ${cost.status} record. Only Draft versions can be deleted.`);
   }
 
   // --- Standard Prices ---
   async findAllStandardPrices() {
-    return this.standardPriceRepository.find({
-      where: { isActive: true },
+    // Return all records (including Draft) so user can see pending changes
+    const prices = await this.standardPriceRepository.find({
       relations: ['rawMaterial'],
-      order: { effectiveFrom: 'DESC' }
+      order: { createdAt: 'DESC' }  // เรียงตามวันที่สร้าง (ไม่มี version แล้ว)
     });
+    return this.attachCurrencyMetadata(prices);
   }
 
-  async addStandardPrice(priceDto: any) {
-    const newPrice = this.standardPriceRepository.create({
-      rawMaterialId: priceDto.rawMaterialId,
-      price: priceDto.price,
-      currency: priceDto.currency,
-      status: priceDto.status || 'Draft',
-      effectiveFrom: priceDto.effectiveFrom,
-      effectiveTo: priceDto.effectiveTo || null,
-      changeReason: priceDto.changeReason || null,
-      isActive: true,
-      version: 1
-    });
-    const savedPrice = await this.standardPriceRepository.save(newPrice);
+  // 🗑️ REMOVED: addStandardPrice - Standard Price is read-only from MongoDB (synced data only)
 
-    // บันทึก history
-    await this.createStandardPriceHistory(savedPrice, 'CREATE', 'admin');
+  // 🗑️ REMOVED: updateStandardPrice - Standard Price is read-only from MongoDB (no version control)
 
-    // บันทึก activity log
-    await this.activityLogService.logMasterDataChanged(
-      'standard_prices',
-      savedPrice.id,
-      'admin',
-      'Admin',
-      'CREATE',
-      null,
-      savedPrice,
-      priceDto.changeReason
-    );
+  // 🗑️ REMOVED: createStandardPriceHistory - Standard Price is read-only from MongoDB (no history)
 
-    return savedPrice;
-  }
-
-  async updateStandardPrice(id: string, priceDto: any) {
-    const price = await this.standardPriceRepository.findOne({ where: { id } });
-    if (!price) {
-      throw new NotFoundException(`Standard price with ID ${id} not found`);
-    }
-
-    const oldData = { ...price };
-
-    try {
-      // ปิด FK check ชั่วคราว
-      await this.standardPriceRepository.query('PRAGMA foreign_keys = OFF');
-
-      // อัพเดท version ถ้ามีการเปลี่ยนแปลงราคา
-      if (price.price !== priceDto.price) {
-        price.version = (price.version || 1) + 1;
-      }
-
-      Object.assign(price, priceDto);
-      const savedPrice = await this.standardPriceRepository.save(price);
-
-      // บันทึก history
-      await this.createStandardPriceHistory(savedPrice, 'UPDATE', 'admin');
-
-      // บันทึก activity log
-      await this.activityLogService.logMasterDataChanged(
-        'standard_prices',
-        savedPrice.id,
-        'admin',
-        'Admin',
-        'UPDATE',
-        oldData,
-        savedPrice,
-        priceDto.changeReason
-      );
-
-      return savedPrice;
-    } finally {
-      // เปิด FK check กลับ
-      await this.standardPriceRepository.query('PRAGMA foreign_keys = ON');
-    }
-  }
-
-  // Helper method สำหรับสร้าง history record
-  private async createStandardPriceHistory(price: StandardPrice, action: string, userId: string) {
-    const history = this.standardPriceHistoryRepository.create({
-      standardPriceId: price.id,
-      version: price.version || 1,
-      rawMaterialId: price.rawMaterialId,
-      price: price.price,
-      currency: price.currency,
-      status: price.status,
-      approvedBy: price.approvedBy,
-      approvedAt: price.approvedAt,
-      effectiveFrom: price.effectiveFrom,
-      effectiveTo: price.effectiveTo,
-      changedBy: userId,
-      changeReason: price.changeReason,
-      action: action
-    });
-    await this.standardPriceHistoryRepository.save(history);
-  }
-
-  async deleteStandardPrice(id: string) {
-    const price = await this.standardPriceRepository.findOne({ where: { id } });
-    if (!price) {
-      throw new NotFoundException(`Standard price with ID ${id} not found`);
-    }
-
-    price.isActive = false;
-    await this.standardPriceRepository.save(price);
-    return { message: `Deleted standard price with ID ${id}` };
-  }
+  // 🗑️ REMOVED: deleteStandardPrice - Standard Price is read-only from MongoDB (synced data only)
 
   // ดึง version history ของ Standard Price ตาม rawMaterialId
-  async getStandardPriceHistory(rawMaterialId: string) {
-    return this.standardPriceHistoryRepository.find({
-      where: { rawMaterialId },
-      order: { version: 'DESC', changedAt: 'DESC' }
-    });
-  }
-
-  // ดึง version history ของ Standard Price ตาม standardPriceId
-  async getStandardPriceHistoryById(standardPriceId: string) {
-    return this.standardPriceHistoryRepository.find({
-      where: { standardPriceId },
-      order: { version: 'DESC', changedAt: 'DESC' }
-    });
-  }
-
-  // Approve Standard Price
-  async approveStandardPrice(id: string, username: string = 'admin') {
-    const price = await this.standardPriceRepository.findOne({ where: { id } });
-    if (!price) {
-      throw new NotFoundException(`Standard price with ID ${id} not found`);
-    }
-
-    // ดึง user ID จาก username
-    const user = await this.userRepository.findOne({ where: { username } });
-    const userId = user?.id || null;
-    const userName = user?.name || username;
-
-    const oldData = { ...price };
-
-    try {
-      // ปิด FK check ชั่วคราว
-      await this.standardPriceRepository.query('PRAGMA foreign_keys = OFF');
-
-      // ใช้ update แทน save เพื่อหลีกเลี่ยง FK constraint error
-      await this.standardPriceRepository.update(id, {
-        status: 'Active', // ✅ เปลี่ยนจาก 'Approved' เป็น 'Active' เพื่อให้ query เจอ
-        approvedBy: userId,
-        approvedAt: new Date()
-      });
-
-      // ดึงข้อมูลใหม่หลัง update
-      const savedPrice = await this.standardPriceRepository.findOne({ where: { id } });
-
-      // บันทึก history
-      await this.createStandardPriceHistory(savedPrice, 'APPROVE', userId || username);
-
-      // บันทึก activity log
-      await this.activityLogService.logMasterDataChanged(
-        'standard_prices',
-        savedPrice.id,
-        userId || username,
-        userName,
-        'UPDATE',
-        oldData,
-        savedPrice,
-        'Approved by ' + userName
-      );
-
-      return savedPrice;
-    } finally {
-      // เปิด FK check กลับ
-      await this.standardPriceRepository.query('PRAGMA foreign_keys = ON');
-    }
-  }
+  // 🗑️ REMOVED: getStandardPriceHistory - Standard Price is read-only from MongoDB (no version control)
+  // 🗑️ REMOVED: getStandardPriceHistoryById - Standard Price is read-only from MongoDB (no version control)
+  // 🗑️ REMOVED: approveStandardPrice - Standard Price is read-only from MongoDB (no version control)
 
   // ดึง version history ของ FabCost
   async getFabCostHistory(fabCostId: string) {
-    return this.fabCostHistoryRepository.find({
-      where: { fabCostId },
-      order: { version: 'DESC', changedAt: 'DESC' }
+    // 1. หา record จาก ID
+    const record = await this.fabCostRepository.findOne({ where: { id: fabCostId } });
+    if (!record) {
+      throw new NotFoundException(`Fab cost with ID ${fabCostId} not found`);
+    }
+
+    // 2. ดึงทุก versions ที่มี itemGroup เดียวกัน (Active, Draft, Archived)
+    const allVersions = await this.fabCostRepository.find({
+      where: { itemGroupCode: record.itemGroupCode },
+      order: { version: 'DESC' }
     });
+
+    return allVersions;
   }
 
   // Approve Fab Cost
@@ -708,6 +831,16 @@ export class DataService {
     const cost = await this.fabCostRepository.findOne({ where: { id } });
     if (!cost) {
       throw new NotFoundException(`Fab cost with ID ${id} not found`);
+    }
+
+    // 🔥 ถ้าเป็น Active อยู่แล้ว → ไม่ต้องทำอะไร
+    if (cost.status === 'Active') {
+      throw new BadRequestException('Cannot approve: This version is already Active');
+    }
+
+    // 🔥 ถ้าไม่ใช่ Draft → ไม่สามารถ approve ได้
+    if (cost.status !== 'Draft') {
+      throw new BadRequestException('Can only approve Draft versions');
     }
 
     // ดึง user ID จาก username
@@ -721,20 +854,41 @@ export class DataService {
       // ปิด FK check ชั่วคราว
       await this.fabCostRepository.query('PRAGMA foreign_keys = OFF');
 
-      // ใช้ update แทน save เพื่อหลีกเลี่ยง FK constraint error
+      // 🔥 STEP 1: Archive versions เก่าที่เป็น Active (same itemGroup)
+      const oldActiveVersions = await this.fabCostRepository.find({
+        where: {
+          itemGroupCode: cost.itemGroupCode,
+          status: 'Active',
+        }
+      });
+
+      for (const oldVersion of oldActiveVersions) {
+        if (oldVersion.id !== id) {
+          await this.fabCostRepository.update(oldVersion.id, {
+            status: 'Archived',
+            effectiveTo: new Date(),
+            isActive: false,
+          });
+          console.log(`✅ Archived FAB Cost version ${oldVersion.version} (ID: ${oldVersion.id})`);
+        }
+      }
+
+      // 🔥 STEP 2: Approve version ใหม่
       await this.fabCostRepository.update(id, {
-        status: 'Approved',
+        status: 'Active',
         approvedBy: userId,
-        approvedAt: new Date()
+        approvedAt: new Date(),
+        effectiveFrom: new Date(),
+        isActive: true,
       });
 
       // ดึงข้อมูลใหม่หลัง update
       const savedCost = await this.fabCostRepository.findOne({ where: { id } });
 
       // บันทึก history
-      await this.createFabCostHistory(savedCost, 'APPROVE', userId || username);
+      await this.createFabCostHistory(savedCost, userId || username);
 
-      // บันทึก activity log
+      // บันทึก activity log พร้อมระบุจำนวน archived versions
       await this.activityLogService.logMasterDataChanged(
         'fab_costs',
         savedCost.id,
@@ -743,7 +897,7 @@ export class DataService {
         'UPDATE',
         oldData,
         savedCost,
-        'Approved by ' + userName
+        `Approved v${savedCost.version} by ${userName} (archived ${oldActiveVersions.length} old versions)`
       );
 
       return savedCost;
@@ -755,10 +909,19 @@ export class DataService {
 
   // ดึง version history ของ SellingFactor
   async getSellingFactorHistory(sellingFactorId: string) {
-    return this.sellingFactorHistoryRepository.find({
-      where: { sellingFactorId },
-      order: { version: 'DESC', changedAt: 'DESC' }
+    // 1. หา record จาก ID
+    const record = await this.sellingFactorRepository.findOne({ where: { id: sellingFactorId } });
+    if (!record) {
+      throw new NotFoundException(`Selling factor with ID ${sellingFactorId} not found`);
+    }
+
+    // 2. ดึงทุก versions ที่มี tubeSize เดียวกัน (Active, Draft, Archived)
+    const allVersions = await this.sellingFactorRepository.find({
+      where: { tubeSize: record.tubeSize },
+      order: { version: 'DESC' }
     });
+
+    return allVersions;
   }
 
   // Approve Selling Factor
@@ -766,6 +929,16 @@ export class DataService {
     const factor = await this.sellingFactorRepository.findOne({ where: { id } });
     if (!factor) {
       throw new NotFoundException(`Selling factor with ID ${id} not found`);
+    }
+
+    // 🔥 ถ้าเป็น Active อยู่แล้ว → ไม่ต้องทำอะไร
+    if (factor.status === 'Active') {
+      throw new BadRequestException('Cannot approve: This version is already Active');
+    }
+
+    // 🔥 ถ้าไม่ใช่ Draft → ไม่สามารถ approve ได้
+    if (factor.status !== 'Draft') {
+      throw new BadRequestException('Can only approve Draft versions');
     }
 
     // ดึง user ID จาก username
@@ -779,20 +952,41 @@ export class DataService {
       // ปิด FK check ชั่วคราว
       await this.sellingFactorRepository.query('PRAGMA foreign_keys = OFF');
 
-      // ใช้ update แทน save เพื่อหลีกเลี่ยง FK constraint error
+      // 🔥 STEP 1: Archive versions เก่าที่เป็น Active (same tubeSize)
+      const oldActiveVersions = await this.sellingFactorRepository.find({
+        where: {
+          tubeSize: factor.tubeSize,
+          status: 'Active',
+        }
+      });
+
+      for (const oldVersion of oldActiveVersions) {
+        if (oldVersion.id !== id) {
+          await this.sellingFactorRepository.update(oldVersion.id, {
+            status: 'Archived',
+            effectiveTo: new Date(),
+            isActive: false,
+          });
+          console.log(`✅ Archived Selling Factor version ${oldVersion.version} (ID: ${oldVersion.id})`);
+        }
+      }
+
+      // 🔥 STEP 2: Approve version ใหม่
       await this.sellingFactorRepository.update(id, {
-        status: 'Approved',
+        status: 'Active',
         approvedBy: userId,
-        approvedAt: new Date()
+        approvedAt: new Date(),
+        effectiveFrom: new Date(),
+        isActive: true,
       });
 
       // ดึงข้อมูลใหม่หลัง update
       const savedFactor = await this.sellingFactorRepository.findOne({ where: { id } });
 
       // บันทึก history
-      await this.createSellingFactorHistory(savedFactor, 'APPROVE', userId || username);
+      await this.createSellingFactorHistory(savedFactor, userId || username);
 
-      // บันทึก activity log
+      // บันทึก activity log พร้อมระบุจำนวน archived versions
       await this.activityLogService.logMasterDataChanged(
         'selling_factors',
         savedFactor.id,
@@ -801,7 +995,7 @@ export class DataService {
         'UPDATE',
         oldData,
         savedFactor,
-        'Approved by ' + userName
+        `Approved v${savedFactor.version} by ${userName} (archived ${oldActiveVersions.length} old versions)`
       );
 
       return savedFactor;
@@ -811,19 +1005,500 @@ export class DataService {
     }
   }
 
+  // ดึง version history ของ LME Master Data
+  async getLmeMasterDataHistory(lmeId: string) {
+    // 1. หา record จาก ID
+    const record = await this.lmeMasterDataRepository.findOne({ where: { id: lmeId } });
+    if (!record) {
+      throw new NotFoundException(`LME Master Data with ID ${lmeId} not found`);
+    }
+
+    // 2. ดึงทุก versions ที่มี itemGroupCode เดียวกัน (Active, Draft, Archived)
+    const allVersions = await this.lmeMasterDataRepository.find({
+      where: { itemGroupCode: record.itemGroupCode },
+      order: { version: 'DESC' }
+    });
+
+    return allVersions;
+  }
+
+  // Approve LME Master Data
+  async approveLmeMasterData(id: string, username: string = 'admin') {
+    const lme = await this.lmeMasterDataRepository.findOne({ where: { id } });
+    if (!lme) {
+      throw new NotFoundException(`LME Master Data with ID ${id} not found`);
+    }
+
+    // 🔥 ถ้าเป็น Active อยู่แล้ว → ไม่ต้องทำอะไร
+    if (lme.status === 'Active') {
+      throw new BadRequestException('Cannot approve: This version is already Active');
+    }
+
+    // 🔥 ถ้าไม่ใช่ Draft → ไม่สามารถ approve ได้
+    if (lme.status !== 'Draft') {
+      throw new BadRequestException('Can only approve Draft versions');
+    }
+
+    // ดึง user ID จาก username
+    const user = await this.userRepository.findOne({ where: { username } });
+    const userId = user?.id || null;
+    const userName = user?.name || username;
+
+    const oldData = { ...lme };
+
+    try {
+      // ปิด FK check ชั่วคราว
+      await this.lmeMasterDataRepository.query('PRAGMA foreign_keys = OFF');
+
+      // 🔥 STEP 1: Archive versions เก่าที่เป็น Active (same itemGroupCode)
+      const oldActiveVersions = await this.lmeMasterDataRepository.find({
+        where: {
+          itemGroupCode: lme.itemGroupCode,
+          status: 'Active',
+        }
+      });
+
+      for (const oldVersion of oldActiveVersions) {
+        if (oldVersion.id !== id) {
+          await this.lmeMasterDataRepository.update(oldVersion.id, {
+            status: 'Archived',
+            effectiveTo: new Date(),
+            isActive: false,
+          });
+          console.log(`✅ Archived LME Master Data version ${oldVersion.version} (ID: ${oldVersion.id})`);
+        }
+      }
+
+      // 🔥 STEP 2: Approve version ใหม่
+      await this.lmeMasterDataRepository.update(id, {
+        status: 'Active',
+        approvedBy: userId,
+        approvedAt: new Date(),
+        effectiveFrom: new Date(),
+        isActive: true,
+      });
+
+      // ดึงข้อมูลใหม่หลัง update
+      const savedLme = await this.lmeMasterDataRepository.findOne({ where: { id } });
+
+      // บันทึก activity log พร้อมระบุจำนวน archived versions
+      await this.activityLogService.logMasterDataChanged(
+        'lme_master_data',
+        savedLme.id,
+        userId || username,
+        userName,
+        'UPDATE',
+        oldData,
+        savedLme,
+        `Approved v${savedLme.version} by ${userName} (archived ${oldActiveVersions.length} old versions)`
+      );
+
+      return savedLme;
+    } finally {
+      // เปิด FK check กลับ
+      await this.lmeMasterDataRepository.query('PRAGMA foreign_keys = ON');
+    }
+  }
+
+  // ดึง version history ของ Exchange Rate Master Data
+  async getExchangeRateMasterDataHistory(exRateId: string) {
+    // 1. หา record จาก ID
+    const record = await this.exchangeRateMasterDataRepository.findOne({ where: { id: exRateId } });
+    if (!record) {
+      throw new NotFoundException(`Exchange Rate Master Data with ID ${exRateId} not found`);
+    }
+
+    // 2. ดึงทุก versions ที่มี sourceCurrencyCode และ destinationCurrencyCode เดียวกัน (Active, Draft, Archived)
+    const allVersions = await this.exchangeRateMasterDataRepository.find({
+      where: {
+        sourceCurrencyCode: record.sourceCurrencyCode,
+        destinationCurrencyCode: record.destinationCurrencyCode
+      },
+      order: { version: 'DESC' }
+    });
+
+    return allVersions;
+  }
+
+  // Approve Exchange Rate Master Data
+  async approveExchangeRateMasterData(id: string, username: string = 'admin') {
+    const exRate = await this.exchangeRateMasterDataRepository.findOne({ where: { id } });
+    if (!exRate) {
+      throw new NotFoundException(`Exchange Rate Master Data with ID ${id} not found`);
+    }
+
+    // 🔥 ถ้าเป็น Active อยู่แล้ว → ไม่ต้องทำอะไร
+    if (exRate.status === 'Active') {
+      throw new BadRequestException('Cannot approve: This version is already Active');
+    }
+
+    // 🔥 ถ้าไม่ใช่ Draft → ไม่สามารถ approve ได้
+    if (exRate.status !== 'Draft') {
+      throw new BadRequestException('Can only approve Draft versions');
+    }
+
+    // ดึง user ID จาก username
+    const user = await this.userRepository.findOne({ where: { username } });
+    const userId = user?.id || null;
+    const userName = user?.name || username;
+
+    const oldData = { ...exRate };
+
+    try {
+      // ปิด FK check ชั่วคราว
+      await this.exchangeRateMasterDataRepository.query('PRAGMA foreign_keys = OFF');
+
+      // 🔥 STEP 1: Archive versions เก่าที่เป็น Active (same currency pair)
+      const oldActiveVersions = await this.exchangeRateMasterDataRepository.find({
+        where: {
+          sourceCurrencyCode: exRate.sourceCurrencyCode,
+          destinationCurrencyCode: exRate.destinationCurrencyCode,
+          status: 'Active',
+        }
+      });
+
+      for (const oldVersion of oldActiveVersions) {
+        if (oldVersion.id !== id) {
+          await this.exchangeRateMasterDataRepository.update(oldVersion.id, {
+            status: 'Archived',
+            effectiveTo: new Date(),
+            isActive: false,
+          });
+          console.log(`✅ Archived Exchange Rate version ${oldVersion.version} (ID: ${oldVersion.id})`);
+        }
+      }
+
+      // 🔥 STEP 2: Approve version ใหม่
+      await this.exchangeRateMasterDataRepository.update(id, {
+        status: 'Active',
+        approvedBy: userId,
+        approvedAt: new Date(),
+        effectiveFrom: new Date(),
+        isActive: true,
+      });
+
+      // ดึงข้อมูลใหม่หลัง update
+      const savedExRate = await this.exchangeRateMasterDataRepository.findOne({ where: { id } });
+
+      // บันทึก activity log พร้อมระบุจำนวน archived versions
+      await this.activityLogService.logMasterDataChanged(
+        'exchange_rate_master_data',
+        savedExRate.id,
+        userId || username,
+        userName,
+        'UPDATE',
+        oldData,
+        savedExRate,
+        `Approved v${savedExRate.version} by ${userName} (archived ${oldActiveVersions.length} old versions)`
+      );
+
+      return savedExRate;
+    } finally {
+      // เปิด FK check กลับ
+      await this.exchangeRateMasterDataRepository.query('PRAGMA foreign_keys = ON');
+    }
+  }
+
+  // 🔄 Rollback/Restore Version Methods
+
+  // 🗑️ REMOVED: rollbackStandardPrice - Standard Price is read-only from MongoDB (no version control)
+
+  // Rollback FAB Cost to a specific archived version
+  async rollbackFabCost(archivedVersionId: string, username: string = 'admin') {
+    const archivedVersion = await this.fabCostRepository.findOne({
+      where: { id: archivedVersionId }
+    });
+
+    if (!archivedVersion) {
+      throw new NotFoundException(`Archived FAB Cost version with ID ${archivedVersionId} not found`);
+    }
+
+    if (archivedVersion.status !== 'Archived') {
+      throw new BadRequestException('Can only rollback from Archived versions');
+    }
+
+    const user = await this.userRepository.findOne({ where: { username } });
+    const userId = user?.id || null;
+    const userName = user?.name || username;
+
+    try {
+      await this.fabCostRepository.query('PRAGMA foreign_keys = OFF');
+
+      // 🔥 ไม่ Archive Active version เพราะ Rollback สร้าง Draft (ยังไม่มีผลกับ Active)
+      // เมื่อ Approve Draft ที่สร้างจาก Rollback แล้ว Active ถึงจะถูก Archive
+
+      // Create new Draft version from archived data
+      const maxVersion = await this.fabCostRepository
+        .createQueryBuilder('fc')
+        .where('fc.itemGroup = :itemGroup', { itemGroupCode: archivedVersion.itemGroupCode })
+        .select('MAX(fc.version)', 'maxVersion')
+        .getRawOne();
+
+      const newVersion = (maxVersion?.maxVersion || 0) + 1;
+
+      const restoredCost = this.fabCostRepository.create({
+        itemGroupCode: archivedVersion.itemGroupCode,
+        price: archivedVersion.price,
+        currency: archivedVersion.currency,
+        description: archivedVersion.description,
+        status: 'Draft',  // 🔥 Rollback สร้าง Draft เพื่อให้ผ่านการอนุมัติก่อน
+        approvedBy: null,  // ยังไม่ได้อนุมัติ
+        approvedAt: null,  // ยังไม่ได้อนุมัติ
+        effectiveFrom: null,  // จะตั้งเมื่ออนุมัติ
+        effectiveTo: null,
+        isActive: false,  // ยังไม่ Active
+        version: newVersion,
+        changeReason: `Rolled back from version ${archivedVersion.version}`,
+        createdBy: username,
+        updatedBy: username,
+      });
+
+      const savedCost = await this.fabCostRepository.save(restoredCost);
+
+      await this.createFabCostHistory(savedCost, userId || username);
+
+      await this.activityLogService.logMasterDataChanged(
+        'fab_costs',
+        savedCost.id,
+        userId || username,
+        userName,
+        'UPDATE',
+        archivedVersion,
+        savedCost,
+        `Rolled back to version ${archivedVersion.version} (created new version ${newVersion}) by ${userName}`
+      );
+
+      return savedCost;
+    } finally {
+      await this.fabCostRepository.query('PRAGMA foreign_keys = ON');
+    }
+  }
+
+  // Rollback Selling Factor to a specific archived version
+  async rollbackSellingFactor(archivedVersionId: string, username: string = 'admin') {
+    const archivedVersion = await this.sellingFactorRepository.findOne({
+      where: { id: archivedVersionId }
+    });
+
+    if (!archivedVersion) {
+      throw new NotFoundException(`Archived Selling Factor version with ID ${archivedVersionId} not found`);
+    }
+
+    if (archivedVersion.status !== 'Archived') {
+      throw new BadRequestException('Can only rollback from Archived versions');
+    }
+
+    const user = await this.userRepository.findOne({ where: { username } });
+    const userId = user?.id || null;
+    const userName = user?.name || username;
+
+    try {
+      await this.sellingFactorRepository.query('PRAGMA foreign_keys = OFF');
+
+      // 🔥 ไม่ Archive Active version เพราะ Rollback สร้าง Draft (ยังไม่มีผลกับ Active)
+      // เมื่อ Approve Draft ที่สร้างจาก Rollback แล้ว Active ถึงจะถูก Archive
+
+      // Create new Draft version from archived data
+      const maxVersion = await this.sellingFactorRepository
+        .createQueryBuilder('sf')
+        .where('sf.tubeSize = :tubeSize', { tubeSize: archivedVersion.tubeSize })
+        .select('MAX(sf.version)', 'maxVersion')
+        .getRawOne();
+
+      const newVersion = (maxVersion?.maxVersion || 0) + 1;
+
+      const restoredFactor = this.sellingFactorRepository.create({
+        tubeSize: archivedVersion.tubeSize,
+        factor: archivedVersion.factor,
+        description: archivedVersion.description,
+        status: 'Draft',  // 🔥 Rollback สร้าง Draft เพื่อให้ผ่านการอนุมัติก่อน
+        approvedBy: null,  // ยังไม่ได้อนุมัติ
+        approvedAt: null,  // ยังไม่ได้อนุมัติ
+        effectiveFrom: null,  // จะตั้งเมื่ออนุมัติ
+        effectiveTo: null,
+        isActive: false,  // ยังไม่ Active
+        version: newVersion,
+        changeReason: `Rolled back from version ${archivedVersion.version}`,
+        createdBy: username,
+        updatedBy: username,
+      });
+
+      const savedFactor = await this.sellingFactorRepository.save(restoredFactor);
+
+      await this.createSellingFactorHistory(savedFactor, userId || username);
+
+      await this.activityLogService.logMasterDataChanged(
+        'selling_factors',
+        savedFactor.id,
+        userId || username,
+        userName,
+        'UPDATE',
+        archivedVersion,
+        savedFactor,
+        `Rolled back to version ${archivedVersion.version} (created new version ${newVersion}) by ${userName}`
+      );
+
+      return savedFactor;
+    } finally {
+      await this.sellingFactorRepository.query('PRAGMA foreign_keys = ON');
+    }
+  }
+
+  // Rollback LME Master Data to a specific archived version
+  async rollbackLmeMasterData(archivedVersionId: string, username: string = 'admin') {
+    const archivedVersion = await this.lmeMasterDataRepository.findOne({
+      where: { id: archivedVersionId }
+    });
+
+    if (!archivedVersion) {
+      throw new NotFoundException(`Archived LME Master Data version with ID ${archivedVersionId} not found`);
+    }
+
+    if (archivedVersion.status !== 'Archived') {
+      throw new BadRequestException('Can only rollback from Archived versions');
+    }
+
+    const user = await this.userRepository.findOne({ where: { username } });
+    const userId = user?.id || null;
+    const userName = user?.name || username;
+
+    try {
+      await this.lmeMasterDataRepository.query('PRAGMA foreign_keys = OFF');
+
+      // 🔥 ไม่ Archive Active version เพราะ Rollback สร้าง Draft (ยังไม่มีผลกับ Active)
+      // เมื่อ Approve Draft ที่สร้างจาก Rollback แล้ว Active ถึงจะถูก Archive
+
+      // Create new Draft version from archived data
+      const maxVersion = await this.lmeMasterDataRepository
+        .createQueryBuilder('lme')
+        .where('lme.itemGroupCode = :itemGroupCode', { itemGroupCode: archivedVersion.itemGroupCode })
+        .select('MAX(lme.version)', 'maxVersion')
+        .getRawOne();
+
+      const newVersion = (maxVersion?.maxVersion || 0) + 1;
+
+      const restoredLme = this.lmeMasterDataRepository.create({
+        itemGroupName: archivedVersion.itemGroupName,
+        itemGroupCode: archivedVersion.itemGroupCode,
+        price: archivedVersion.price,
+        currency: archivedVersion.currency,
+        description: archivedVersion.description,
+        status: 'Draft',  // 🔥 Rollback สร้าง Draft เพื่อให้ผ่านการอนุมัติก่อน
+        approvedBy: null,  // ยังไม่ได้อนุมัติ
+        approvedAt: null,  // ยังไม่ได้อนุมัติ
+        effectiveFrom: null,  // จะตั้งเมื่ออนุมัติ
+        effectiveTo: null,
+        isActive: false,  // ยังไม่ Active
+        version: newVersion,
+        changeReason: `Rolled back from version ${archivedVersion.version}`,
+        createdBy: username,
+        updatedBy: username,
+      });
+
+      const savedLme = await this.lmeMasterDataRepository.save(restoredLme);
+
+      await this.activityLogService.logMasterDataChanged(
+        'lme_master_data',
+        savedLme.id,
+        userId || username,
+        userName,
+        'UPDATE',
+        archivedVersion,
+        savedLme,
+        `Rolled back to version ${archivedVersion.version} (created new version ${newVersion}) by ${userName}`
+      );
+
+      return savedLme;
+    } finally {
+      await this.lmeMasterDataRepository.query('PRAGMA foreign_keys = ON');
+    }
+  }
+
+  // Rollback Exchange Rate Master Data to a specific archived version
+  async rollbackExchangeRateMasterData(archivedVersionId: string, username: string = 'admin') {
+    const archivedVersion = await this.exchangeRateMasterDataRepository.findOne({
+      where: { id: archivedVersionId }
+    });
+
+    if (!archivedVersion) {
+      throw new NotFoundException(`Archived Exchange Rate version with ID ${archivedVersionId} not found`);
+    }
+
+    if (archivedVersion.status !== 'Archived') {
+      throw new BadRequestException('Can only rollback from Archived versions');
+    }
+
+    const user = await this.userRepository.findOne({ where: { username } });
+    const userId = user?.id || null;
+    const userName = user?.name || username;
+
+    try {
+      await this.exchangeRateMasterDataRepository.query('PRAGMA foreign_keys = OFF');
+
+      // 🔥 ไม่ Archive Active version เพราะ Rollback สร้าง Draft (ยังไม่มีผลกับ Active)
+      // เมื่อ Approve Draft ที่สร้างจาก Rollback แล้ว Active ถึงจะถูก Archive
+
+      // Create new Draft version from archived data
+      const maxVersion = await this.exchangeRateMasterDataRepository
+        .createQueryBuilder('er')
+        .where('er.sourceCurrencyCode = :source AND er.destinationCurrencyCode = :dest', {
+          source: archivedVersion.sourceCurrencyCode,
+          dest: archivedVersion.destinationCurrencyCode
+        })
+        .select('MAX(er.version)', 'maxVersion')
+        .getRawOne();
+
+      const newVersion = (maxVersion?.maxVersion || 0) + 1;
+
+      const restoredExRate = this.exchangeRateMasterDataRepository.create({
+        sourceCurrencyCode: archivedVersion.sourceCurrencyCode,
+        sourceCurrencyName: archivedVersion.sourceCurrencyName,
+        destinationCurrencyCode: archivedVersion.destinationCurrencyCode,
+        destinationCurrencyName: archivedVersion.destinationCurrencyName,
+        rate: archivedVersion.rate,
+        status: 'Draft',  // 🔥 Rollback สร้าง Draft เพื่อให้ผ่านการอนุมัติก่อน
+        approvedBy: null,  // ยังไม่ได้อนุมัติ
+        approvedAt: null,  // ยังไม่ได้อนุมัติ
+        effectiveFrom: null,  // จะตั้งเมื่ออนุมัติ
+        effectiveTo: null,
+        isActive: false,  // ยังไม่ Active
+        version: newVersion,
+        changeReason: `Rolled back from version ${archivedVersion.version}`,
+        createdBy: username,
+        updatedBy: username,
+      });
+
+      const savedExRate = await this.exchangeRateMasterDataRepository.save(restoredExRate);
+
+      await this.activityLogService.logMasterDataChanged(
+        'exchange_rate_master_data',
+        savedExRate.id,
+        userId || username,
+        userName,
+        'UPDATE',
+        archivedVersion,
+        savedExRate,
+        `Rolled back to version ${archivedVersion.version} (created new version ${newVersion}) by ${userName}`
+      );
+
+      return savedExRate;
+    } finally {
+      await this.exchangeRateMasterDataRepository.query('PRAGMA foreign_keys = ON');
+    }
+  }
+
   // --- Selling Factors ---
   async findAllSellingFactors() {
+    // v8.0: Selling Factor ใช้ tubeSize แทน patternCode/patternName
+    // Note: Return all records (including Draft) so user can see pending changes
     return this.sellingFactorRepository.find({
-      where: { isActive: true },
-      relations: ['customerGroup'],
-      order: { createdAt: 'DESC' }
+      order: { tubeSize: 'ASC', version: 'DESC', createdAt: 'DESC' }
     });
   }
 
   async addSellingFactor(factorDto: any) {
     const newFactor = this.sellingFactorRepository.create({
-      patternName: factorDto.patternName,
-      patternCode: factorDto.patternCode,
+      tubeSize: factorDto.tubeSize,
       factor: factorDto.factor,
       description: factorDto.description || null,
       status: factorDto.status || 'Draft',
@@ -831,12 +1506,14 @@ export class DataService {
       effectiveTo: factorDto.effectiveTo || null,
       changeReason: factorDto.changeReason || null,
       isActive: true,
-      version: 1
+      version: 1,
+      createdBy: 'admin',
+      updatedBy: 'admin'
     });
     const savedFactor = await this.sellingFactorRepository.save(newFactor);
 
     // บันทึก history
-    await this.createSellingFactorHistory(savedFactor, 'CREATE', 'admin');
+    await this.createSellingFactorHistory(savedFactor, 'admin');
 
     // บันทึก activity log
     await this.activityLogService.logMasterDataChanged(
@@ -861,39 +1538,131 @@ export class DataService {
 
     const oldData = { ...factor };
 
-    // อัพเดท version ถ้ามีการเปลี่ยนแปลง factor
-    if (factor.factor !== factorDto.factor) {
-      factor.version = (factor.version || 1) + 1;
+    try {
+      // ปิด FK check ชั่วคราว
+      await this.sellingFactorRepository.query('PRAGMA foreign_keys = OFF');
+
+      // 🔥 ถ้าเป็น Draft อยู่แล้ว → Update record เดิม
+      if (factor.status === 'Draft') {
+        Object.assign(factor, {
+          tubeSize: factorDto.tubeSize !== undefined ? factorDto.tubeSize : factor.tubeSize,
+          factor: factorDto.factor !== undefined ? factorDto.factor : factor.factor,
+          description: factorDto.description !== undefined ? factorDto.description : factor.description,
+          effectiveFrom: factorDto.effectiveFrom !== undefined ? factorDto.effectiveFrom : factor.effectiveFrom,
+          effectiveTo: factorDto.effectiveTo !== undefined ? factorDto.effectiveTo : factor.effectiveTo,
+          changeReason: factorDto.changeReason !== undefined ? factorDto.changeReason : factor.changeReason,
+          updatedBy: 'admin',
+        });
+
+        const savedFactor = await this.sellingFactorRepository.save(factor);
+
+        // บันทึก history
+        await this.createSellingFactorHistory(savedFactor, 'admin');
+
+        // บันทึก activity log
+        await this.activityLogService.logMasterDataChanged(
+          'selling_factors',
+          savedFactor.id,
+          'admin',
+          'Admin',
+          'UPDATE',
+          oldData,
+          savedFactor,
+          factorDto.changeReason ?? 'Updated draft version'
+        );
+
+        return savedFactor;
+      }
+
+      // 🔥 ถ้าเป็น Active/Archived → ตรวจสอบว่ามี Draft อยู่แล้วหรือไม่
+      // ถ้ามี Draft อยู่แล้ว → Update Draft เดิม
+      // ถ้ายังไม่มี → สร้าง Draft ใหม่
+      const existingDraft = await this.sellingFactorRepository.findOne({
+        where: {
+          tubeSize: factor.tubeSize,
+          status: 'Draft',
+        },
+      });
+
+      if (existingDraft) {
+        // Update Draft ที่มีอยู่แล้ว
+        Object.assign(existingDraft, {
+          tubeSize: factorDto.tubeSize !== undefined ? factorDto.tubeSize : existingDraft.tubeSize,
+          factor: factorDto.factor !== undefined ? factorDto.factor : existingDraft.factor,
+          description: factorDto.description !== undefined ? factorDto.description : existingDraft.description,
+          effectiveFrom: factorDto.effectiveFrom !== undefined ? factorDto.effectiveFrom : existingDraft.effectiveFrom,
+          effectiveTo: factorDto.effectiveTo !== undefined ? factorDto.effectiveTo : existingDraft.effectiveTo,
+          changeReason: factorDto.changeReason !== undefined ? factorDto.changeReason : existingDraft.changeReason,
+          updatedBy: 'admin',
+        });
+
+        const savedFactor = await this.sellingFactorRepository.save(existingDraft);
+
+        // บันทึก history
+        await this.createSellingFactorHistory(savedFactor, 'admin');
+
+        // บันทึก activity log
+        await this.activityLogService.logMasterDataChanged(
+          'selling_factors',
+          savedFactor.id,
+          'admin',
+          'Admin',
+          'UPDATE',
+          oldData,
+          savedFactor,
+          factorDto.changeReason ?? 'Updated existing draft version'
+        );
+
+        return savedFactor;
+      }
+
+      // สร้าง Draft version ใหม่
+      const newVersion = (factor.version || 1) + 1;
+
+      const newFactor = this.sellingFactorRepository.create({
+        tubeSize: factorDto.tubeSize !== undefined ? factorDto.tubeSize : factor.tubeSize,
+        factor: factorDto.factor !== undefined ? factorDto.factor : factor.factor,
+        description: factorDto.description !== undefined ? factorDto.description : factor.description,
+        status: 'Draft',
+        effectiveFrom: factorDto.effectiveFrom !== undefined ? factorDto.effectiveFrom : factor.effectiveFrom,
+        effectiveTo: factorDto.effectiveTo !== undefined ? factorDto.effectiveTo : null,
+        changeReason: factorDto.changeReason !== undefined ? factorDto.changeReason : `Updated from v${factor.version}`,
+        version: newVersion,
+        isActive: false,
+        createdBy: 'admin',
+        updatedBy: 'admin',
+      });
+
+      const savedFactor = await this.sellingFactorRepository.save(newFactor);
+
+      // บันทึก history
+      await this.createSellingFactorHistory(savedFactor, 'admin');
+
+      // บันทึก activity log
+      await this.activityLogService.logMasterDataChanged(
+        'selling_factors',
+        savedFactor.id,
+        'admin',
+        'Admin',
+        'CREATE',
+        null,
+        savedFactor,
+        factorDto.changeReason ?? `Created new draft v${newVersion} based on v${factor.version}`
+      );
+
+      return savedFactor;
+    } finally {
+      // เปิด FK check กลับ
+      await this.sellingFactorRepository.query('PRAGMA foreign_keys = ON');
     }
-
-    Object.assign(factor, factorDto);
-    const savedFactor = await this.sellingFactorRepository.save(factor);
-
-    // บันทึก history
-    await this.createSellingFactorHistory(savedFactor, 'UPDATE', 'admin');
-
-    // บันทึก activity log
-    await this.activityLogService.logMasterDataChanged(
-      'selling_factors',
-      savedFactor.id,
-      'admin',
-      'Admin',
-      'UPDATE',
-      oldData,
-      savedFactor,
-      factorDto.changeReason
-    );
-
-    return savedFactor;
   }
 
   // Helper method สำหรับสร้าง SellingFactor history record
-  private async createSellingFactorHistory(factor: SellingFactor, action: string, userId: string) {
+  private async createSellingFactorHistory(factor: SellingFactor, userId: string) {
     const history = this.sellingFactorHistoryRepository.create({
       sellingFactorId: factor.id,
       version: factor.version || 1,
-      patternName: factor.patternName,
-      patternCode: factor.patternCode,
+      tubeSize: factor.tubeSize,
       factor: factor.factor,
       description: factor.description,
       status: factor.status,
@@ -901,9 +1670,8 @@ export class DataService {
       approvedAt: factor.approvedAt,
       effectiveFrom: factor.effectiveFrom,
       effectiveTo: factor.effectiveTo,
-      changedBy: userId,
-      changeReason: factor.changeReason,
-      action: action
+      createdBy: userId,
+      changeReason: factor.changeReason
     });
     await this.sellingFactorHistoryRepository.save(history);
   }
@@ -914,9 +1682,14 @@ export class DataService {
       throw new NotFoundException(`Selling factor with ID ${id} not found`);
     }
 
-    factor.isActive = false;
-    await this.sellingFactorRepository.save(factor);
-    return { message: `Deleted selling factor with ID ${id}` };
+    // 🔥 ถ้าเป็น Draft → ลบได้จริงๆ
+    if (factor.status === 'Draft') {
+      await this.sellingFactorRepository.remove(factor);
+      return { message: `Permanently deleted Draft Selling Factor with ID ${id}` };
+    }
+
+    // 🔥 ถ้าเป็น Active หรือ Archived → ห้ามลบ
+    throw new BadRequestException(`Cannot delete ${factor.status} record. Only Draft versions can be deleted.`);
   }
 
   // --- LME Prices ---
@@ -964,18 +1737,36 @@ export class DataService {
 
   // --- Exchange Rates ---
   async findAllExchangeRates() {
-    return this.exchangeRateRepository.find({
+    const rates = await this.exchangeRateRepository.find({
       where: { isActive: true },
       order: { rateDate: 'DESC' }
     });
+    return this.attachExchangeRateCurrencyMetadata(rates);
   }
 
   async addExchangeRate(rateDto: any) {
+    const [sourceCode, destinationCode] = await this.ensureCurrencyCodesExist([
+      { code: rateDto.sourceCurrencyCode, context: 'Exchange Rate (source)' },
+      {
+        code: rateDto.destinationCurrencyCode,
+        context: 'Exchange Rate (destination)',
+      },
+    ]);
+
+    const [sourceCurrency, destinationCurrency] = await Promise.all([
+      this.findCurrencyEntity(sourceCode),
+      this.findCurrencyEntity(destinationCode),
+    ]);
+
     const newRate = this.exchangeRateRepository.create({
-      sourceCurrencyCode: rateDto.sourceCurrencyCode,
-      sourceCurrencyName: rateDto.sourceCurrencyName,
-      destinationCurrencyCode: rateDto.destinationCurrencyCode,
-      destinationCurrencyName: rateDto.destinationCurrencyName,
+      sourceCurrencyCode: sourceCode,
+      sourceCurrencyName:
+        sourceCurrency?.name ?? rateDto.sourceCurrencyName ?? sourceCode,
+      destinationCurrencyCode: destinationCode,
+      destinationCurrencyName:
+        destinationCurrency?.name ??
+        rateDto.destinationCurrencyName ??
+        destinationCode,
       rate: rateDto.rate,
       rateDate: rateDto.rateDate || new Date(),
       source: rateDto.source || 'BOT',
@@ -991,7 +1782,45 @@ export class DataService {
       throw new NotFoundException(`Exchange rate with ID ${id} not found`);
     }
 
-    Object.assign(rate, rateDto);
+    const updated: any = { ...rateDto };
+
+    if (rateDto.sourceCurrencyCode !== undefined) {
+      updated.sourceCurrencyCode = await this.ensureCurrencyCodeExists(
+        rateDto.sourceCurrencyCode,
+        'Exchange Rate (source)',
+      );
+    }
+
+    if (rateDto.destinationCurrencyCode !== undefined) {
+      updated.destinationCurrencyCode = await this.ensureCurrencyCodeExists(
+        rateDto.destinationCurrencyCode,
+        'Exchange Rate (destination)',
+      );
+    }
+
+    if (updated.sourceCurrencyCode) {
+      const sourceCurrency = await this.findCurrencyEntity(
+        updated.sourceCurrencyCode,
+      );
+      if (sourceCurrency) {
+        updated.sourceCurrencyName = sourceCurrency.name;
+      } else if (!updated.sourceCurrencyName) {
+        updated.sourceCurrencyName = updated.sourceCurrencyCode;
+      }
+    }
+
+    if (updated.destinationCurrencyCode) {
+      const destinationCurrency = await this.findCurrencyEntity(
+        updated.destinationCurrencyCode,
+      );
+      if (destinationCurrency) {
+        updated.destinationCurrencyName = destinationCurrency.name;
+      } else if (!updated.destinationCurrencyName) {
+        updated.destinationCurrencyName = updated.destinationCurrencyCode;
+      }
+    }
+
+    Object.assign(rate, updated);
     return this.exchangeRateRepository.save(rate);
   }
 
@@ -1088,20 +1917,25 @@ export class DataService {
 
   // --- LME Master Data (for calculation) ---
   async findAllLmeMasterData() {
-    return this.lmeMasterDataRepository.find({
-      where: { isActive: true },
-      relations: ['customerGroup'],
-      order: { createdAt: 'DESC' }
+    // v7.0: LME Master Data ไม่มี customerGroup relation แล้ว (Global Default)
+    // Return all records (including Draft) so user can see pending changes
+    const records = await this.lmeMasterDataRepository.find({
+      order: { itemGroupCode: 'ASC', version: 'DESC', createdAt: 'DESC' }
     });
+    return this.attachCurrencyMetadata(records);
   }
 
   async addLmeMasterData(lmeDto: any) {
+    const currencyCode = await this.ensureCurrencyCodeExists(
+      lmeDto.currencyCode ?? lmeDto.currency,
+      'LME Master Data',
+    );
+
     const newLme = this.lmeMasterDataRepository.create({
       itemGroupName: lmeDto.itemGroupName,
       itemGroupCode: lmeDto.itemGroupCode,
       price: lmeDto.price,
-      currency: lmeDto.currency,
-      customerGroupId: lmeDto.customerGroupId || null,
+      currency: currencyCode,
       description: lmeDto.description,
       status: lmeDto.status || 'Draft',
       effectiveFrom: lmeDto.effectiveFrom,
@@ -1119,13 +1953,118 @@ export class DataService {
       throw new NotFoundException(`LME master data with ID ${id} not found`);
     }
 
-    // อัพเดท version ถ้ามีการเปลี่ยนแปลงราคา
-    if (lme.price !== lmeDto.price) {
-      lme.version = (lme.version || 1) + 1;
+    // Ensure currency code
+    let currencyCode = lme.currency;
+    if (lmeDto.currency !== undefined || lmeDto.currencyCode !== undefined) {
+      currencyCode = await this.ensureCurrencyCodeExists(
+        lmeDto.currencyCode ?? lmeDto.currency,
+        'LME Master Data',
+      );
     }
 
-    Object.assign(lme, lmeDto);
-    return this.lmeMasterDataRepository.save(lme);
+    const oldData = { ...lme };
+
+    try {
+      await this.lmeMasterDataRepository.query('PRAGMA foreign_keys = OFF');
+
+      // 🔥 ถ้าเป็น Draft อยู่แล้ว → Update record เดิม
+      if (lme.status === 'Draft') {
+        Object.assign(lme, {
+          itemGroupName: lmeDto.itemGroupName !== undefined ? lmeDto.itemGroupName : lme.itemGroupName,
+          itemGroupCode: lmeDto.itemGroupCode !== undefined ? lmeDto.itemGroupCode : lme.itemGroupCode,
+          price: lmeDto.price !== undefined ? lmeDto.price : lme.price,
+          currency: currencyCode,
+          description: lmeDto.description !== undefined ? lmeDto.description : lme.description,
+          effectiveFrom: lmeDto.effectiveFrom !== undefined ? lmeDto.effectiveFrom : lme.effectiveFrom,
+          effectiveTo: lmeDto.effectiveTo !== undefined ? lmeDto.effectiveTo : lme.effectiveTo,
+          changeReason: lmeDto.changeReason !== undefined ? lmeDto.changeReason : lme.changeReason,
+          updatedBy: 'admin',
+        });
+
+        const savedLme = await this.lmeMasterDataRepository.save(lme);
+        await this.activityLogService.logMasterDataChanged(
+          'lme_master_data',
+          savedLme.id,
+          'admin',
+          'Admin',
+          'UPDATE',
+          oldData,
+          savedLme,
+          lmeDto.changeReason ?? 'Updated draft version'
+        );
+        return savedLme;
+      }
+
+      // 🔥 ถ้าเป็น Active/Archived → ตรวจสอบว่ามี Draft อยู่แล้วหรือไม่
+      const existingDraft = await this.lmeMasterDataRepository.findOne({
+        where: {
+          itemGroupCode: lme.itemGroupCode,
+          status: 'Draft',
+        },
+      });
+
+      if (existingDraft) {
+        // Update existing Draft
+        Object.assign(existingDraft, {
+          itemGroupName: lmeDto.itemGroupName !== undefined ? lmeDto.itemGroupName : existingDraft.itemGroupName,
+          itemGroupCode: lmeDto.itemGroupCode !== undefined ? lmeDto.itemGroupCode : existingDraft.itemGroupCode,
+          price: lmeDto.price !== undefined ? lmeDto.price : existingDraft.price,
+          currency: currencyCode,
+          description: lmeDto.description !== undefined ? lmeDto.description : existingDraft.description,
+          effectiveFrom: lmeDto.effectiveFrom !== undefined ? lmeDto.effectiveFrom : existingDraft.effectiveFrom,
+          effectiveTo: lmeDto.effectiveTo !== undefined ? lmeDto.effectiveTo : existingDraft.effectiveTo,
+          changeReason: lmeDto.changeReason !== undefined ? lmeDto.changeReason : existingDraft.changeReason,
+          updatedBy: 'admin',
+        });
+
+        const savedLme = await this.lmeMasterDataRepository.save(existingDraft);
+        await this.activityLogService.logMasterDataChanged(
+          'lme_master_data',
+          savedLme.id,
+          'admin',
+          'Admin',
+          'UPDATE',
+          oldData,
+          savedLme,
+          lmeDto.changeReason ?? 'Updated existing draft version'
+        );
+        return savedLme;
+      }
+
+      // 🔥 ไม่มี Draft อยู่ → สร้าง Draft version ใหม่
+      const newVersion = (lme.version || 1) + 1;
+
+      const newLme = this.lmeMasterDataRepository.create({
+        itemGroupName: lmeDto.itemGroupName !== undefined ? lmeDto.itemGroupName : lme.itemGroupName,
+        itemGroupCode: lmeDto.itemGroupCode !== undefined ? lmeDto.itemGroupCode : lme.itemGroupCode,
+        price: lmeDto.price !== undefined ? lmeDto.price : lme.price,
+        currency: currencyCode,
+        description: lmeDto.description !== undefined ? lmeDto.description : lme.description,
+        status: 'Draft',
+        effectiveFrom: lmeDto.effectiveFrom !== undefined ? lmeDto.effectiveFrom : lme.effectiveFrom,
+        effectiveTo: lmeDto.effectiveTo !== undefined ? lmeDto.effectiveTo : null,
+        changeReason: lmeDto.changeReason !== undefined ? lmeDto.changeReason : `Updated from v${lme.version}`,
+        version: newVersion,
+        isActive: false,
+        createdBy: 'admin',
+        updatedBy: 'admin',
+      });
+
+      const savedLme = await this.lmeMasterDataRepository.save(newLme);
+      await this.activityLogService.logMasterDataChanged(
+        'lme_master_data',
+        savedLme.id,
+        'admin',
+        'Admin',
+        'CREATE',
+        null,
+        savedLme,
+        lmeDto.changeReason ?? `Created new draft v${newVersion} based on v${lme.version}`
+      );
+      return savedLme;
+    } finally {
+      await this.lmeMasterDataRepository.query('PRAGMA foreign_keys = ON');
+    }
   }
 
   async deleteLmeMasterData(id: string) {
@@ -1134,28 +2073,50 @@ export class DataService {
       throw new NotFoundException(`LME master data with ID ${id} not found`);
     }
 
-    lme.isActive = false;
-    await this.lmeMasterDataRepository.save(lme);
-    return { message: `Deleted LME master data with ID ${id}` };
+    // 🔥 ถ้าเป็น Draft → ลบได้จริงๆ
+    if (lme.status === 'Draft') {
+      await this.lmeMasterDataRepository.remove(lme);
+      return { message: `Permanently deleted Draft LME Master Data with ID ${id}` };
+    }
+
+    // 🔥 ถ้าเป็น Active หรือ Archived → ห้ามลบ
+    throw new BadRequestException(`Cannot delete ${lme.status} record. Only Draft versions can be deleted.`);
   }
 
   // --- Exchange Rate Master Data (for calculation) ---
   async findAllExchangeRateMasterData() {
-    return this.exchangeRateMasterDataRepository.find({
-      where: { isActive: true },
-      relations: ['customerGroup'],
-      order: { createdAt: 'DESC' }
+    // v7.0: Exchange Rate Master Data ไม่มี customerGroup relation แล้ว (Global Default)
+    // Return all records (including Draft) so user can see pending changes
+    const records = await this.exchangeRateMasterDataRepository.find({
+      order: { sourceCurrencyCode: 'ASC', destinationCurrencyCode: 'ASC', version: 'DESC', createdAt: 'DESC' }
     });
+    return this.attachExchangeRateCurrencyMetadata(records);
   }
 
   async addExchangeRateMasterData(rateDto: any) {
+    const [sourceCode, destinationCode] = await this.ensureCurrencyCodesExist([
+      { code: rateDto.sourceCurrencyCode, context: 'Exchange Rate (source)' },
+      {
+        code: rateDto.destinationCurrencyCode,
+        context: 'Exchange Rate (destination)',
+      },
+    ]);
+
+    const [sourceCurrency, destinationCurrency] = await Promise.all([
+      this.findCurrencyEntity(sourceCode),
+      this.findCurrencyEntity(destinationCode),
+    ]);
+
     const newRate = this.exchangeRateMasterDataRepository.create({
-      sourceCurrencyCode: rateDto.sourceCurrencyCode,
-      sourceCurrencyName: rateDto.sourceCurrencyName,
-      destinationCurrencyCode: rateDto.destinationCurrencyCode,
-      destinationCurrencyName: rateDto.destinationCurrencyName,
+      sourceCurrencyCode: sourceCode,
+      sourceCurrencyName:
+        sourceCurrency?.name ?? rateDto.sourceCurrencyName ?? sourceCode,
+      destinationCurrencyCode: destinationCode,
+      destinationCurrencyName:
+        destinationCurrency?.name ??
+        rateDto.destinationCurrencyName ??
+        destinationCode,
       rate: rateDto.rate,
-      customerGroupId: rateDto.customerGroupId || null,
       description: rateDto.description,
       status: rateDto.status || 'Draft',
       effectiveFrom: rateDto.effectiveFrom,
@@ -1173,13 +2134,145 @@ export class DataService {
       throw new NotFoundException(`Exchange rate master data with ID ${id} not found`);
     }
 
-    // อัพเดท version ถ้ามีการเปลี่ยนแปลงอัตรา
-    if (rate.rate !== rateDto.rate) {
-      rate.version = (rate.version || 1) + 1;
+    // Ensure currency codes
+    let sourceCurrencyCode = rate.sourceCurrencyCode;
+    let destinationCurrencyCode = rate.destinationCurrencyCode;
+
+    if (rateDto.sourceCurrencyCode !== undefined) {
+      sourceCurrencyCode = await this.ensureCurrencyCodeExists(
+        rateDto.sourceCurrencyCode,
+        'Exchange Rate (source)',
+      );
     }
 
-    Object.assign(rate, rateDto);
-    return this.exchangeRateMasterDataRepository.save(rate);
+    if (rateDto.destinationCurrencyCode !== undefined) {
+      destinationCurrencyCode = await this.ensureCurrencyCodeExists(
+        rateDto.destinationCurrencyCode,
+        'Exchange Rate (destination)',
+      );
+    }
+
+    // Get currency names
+    let sourceCurrencyName = rate.sourceCurrencyName;
+    let destinationCurrencyName = rate.destinationCurrencyName;
+
+    if (rateDto.sourceCurrencyCode !== undefined) {
+      const sourceCurrency = await this.findCurrencyEntity(sourceCurrencyCode);
+      sourceCurrencyName = sourceCurrency?.name ?? rateDto.sourceCurrencyName ?? sourceCurrencyCode;
+    }
+
+    if (rateDto.destinationCurrencyCode !== undefined) {
+      const destinationCurrency = await this.findCurrencyEntity(destinationCurrencyCode);
+      destinationCurrencyName = destinationCurrency?.name ?? rateDto.destinationCurrencyName ?? destinationCurrencyCode;
+    }
+
+    const oldData = { ...rate };
+
+    try {
+      await this.exchangeRateMasterDataRepository.query('PRAGMA foreign_keys = OFF');
+
+      // 🔥 ถ้าเป็น Draft อยู่แล้ว → Update record เดิม
+      if (rate.status === 'Draft') {
+        Object.assign(rate, {
+          sourceCurrencyCode,
+          sourceCurrencyName: rateDto.sourceCurrencyName !== undefined ? rateDto.sourceCurrencyName : sourceCurrencyName,
+          destinationCurrencyCode,
+          destinationCurrencyName: rateDto.destinationCurrencyName !== undefined ? rateDto.destinationCurrencyName : destinationCurrencyName,
+          rate: rateDto.rate !== undefined ? rateDto.rate : rate.rate,
+          description: rateDto.description !== undefined ? rateDto.description : rate.description,
+          effectiveFrom: rateDto.effectiveFrom !== undefined ? rateDto.effectiveFrom : rate.effectiveFrom,
+          effectiveTo: rateDto.effectiveTo !== undefined ? rateDto.effectiveTo : rate.effectiveTo,
+          changeReason: rateDto.changeReason !== undefined ? rateDto.changeReason : rate.changeReason,
+          updatedBy: 'admin',
+        });
+
+        const savedRate = await this.exchangeRateMasterDataRepository.save(rate);
+        await this.activityLogService.logMasterDataChanged(
+          'exchange_rate_master_data',
+          savedRate.id,
+          'admin',
+          'Admin',
+          'UPDATE',
+          oldData,
+          savedRate,
+          rateDto.changeReason ?? 'Updated draft version'
+        );
+        return savedRate;
+      }
+
+      // 🔥 ถ้าเป็น Active/Archived → ตรวจสอบว่ามี Draft อยู่แล้วหรือไม่
+      const existingDraft = await this.exchangeRateMasterDataRepository.findOne({
+        where: {
+          sourceCurrencyCode: rate.sourceCurrencyCode,
+          destinationCurrencyCode: rate.destinationCurrencyCode,
+          status: 'Draft',
+        },
+      });
+
+      if (existingDraft) {
+        // Update existing Draft
+        Object.assign(existingDraft, {
+          sourceCurrencyCode,
+          sourceCurrencyName: rateDto.sourceCurrencyName !== undefined ? rateDto.sourceCurrencyName : sourceCurrencyName,
+          destinationCurrencyCode,
+          destinationCurrencyName: rateDto.destinationCurrencyName !== undefined ? rateDto.destinationCurrencyName : destinationCurrencyName,
+          rate: rateDto.rate !== undefined ? rateDto.rate : existingDraft.rate,
+          description: rateDto.description !== undefined ? rateDto.description : existingDraft.description,
+          effectiveFrom: rateDto.effectiveFrom !== undefined ? rateDto.effectiveFrom : existingDraft.effectiveFrom,
+          effectiveTo: rateDto.effectiveTo !== undefined ? rateDto.effectiveTo : existingDraft.effectiveTo,
+          changeReason: rateDto.changeReason !== undefined ? rateDto.changeReason : existingDraft.changeReason,
+          updatedBy: 'admin',
+        });
+
+        const savedRate = await this.exchangeRateMasterDataRepository.save(existingDraft);
+        await this.activityLogService.logMasterDataChanged(
+          'exchange_rate_master_data',
+          savedRate.id,
+          'admin',
+          'Admin',
+          'UPDATE',
+          oldData,
+          savedRate,
+          rateDto.changeReason ?? 'Updated existing draft version'
+        );
+        return savedRate;
+      }
+
+      // 🔥 ไม่มี Draft อยู่ → สร้าง Draft version ใหม่
+      const newVersion = (rate.version || 1) + 1;
+
+      const newRate = this.exchangeRateMasterDataRepository.create({
+        sourceCurrencyCode,
+        sourceCurrencyName: rateDto.sourceCurrencyName !== undefined ? rateDto.sourceCurrencyName : sourceCurrencyName,
+        destinationCurrencyCode,
+        destinationCurrencyName: rateDto.destinationCurrencyName !== undefined ? rateDto.destinationCurrencyName : destinationCurrencyName,
+        rate: rateDto.rate !== undefined ? rateDto.rate : rate.rate,
+        description: rateDto.description !== undefined ? rateDto.description : rate.description,
+        status: 'Draft',
+        effectiveFrom: rateDto.effectiveFrom !== undefined ? rateDto.effectiveFrom : rate.effectiveFrom,
+        effectiveTo: rateDto.effectiveTo !== undefined ? rateDto.effectiveTo : null,
+        changeReason: rateDto.changeReason !== undefined ? rateDto.changeReason : `Updated from v${rate.version}`,
+        version: newVersion,
+        isActive: false,
+        createdBy: 'admin',
+        updatedBy: 'admin',
+      });
+
+      const savedRate = await this.exchangeRateMasterDataRepository.save(newRate);
+      await this.activityLogService.logMasterDataChanged(
+        'exchange_rate_master_data',
+        savedRate.id,
+        'admin',
+        'Admin',
+        'CREATE',
+        null,
+        savedRate,
+        rateDto.changeReason ?? `Created new draft v${newVersion} based on v${rate.version}`
+      );
+      return savedRate;
+    } finally {
+      await this.exchangeRateMasterDataRepository.query('PRAGMA foreign_keys = ON');
+    }
   }
 
   async deleteExchangeRateMasterData(id: string) {
@@ -1188,47 +2281,16 @@ export class DataService {
       throw new NotFoundException(`Exchange rate master data with ID ${id} not found`);
     }
 
-    rate.isActive = false;
-    await this.exchangeRateMasterDataRepository.save(rate);
-    return { message: `Deleted exchange rate master data with ID ${id}` };
-  }
-
-  // ✅ ONE-TIME FIX: แก้ไข status ของ Standard Prices ที่มีอยู่จาก 'Approved' → 'Active'
-  async fixStandardPricesStatus() {
-    try {
-      console.log('[fixStandardPricesStatus] Starting to fix Standard Prices status...');
-
-      // ปิด FK check ชั่วคราว
-      await this.standardPriceRepository.query('PRAGMA foreign_keys = OFF');
-
-      // ค้นหาทั้งหมดที่มี status = 'Approved'
-      const approvedPrices = await this.standardPriceRepository.find({
-        where: { status: 'Approved' as any }
-      });
-
-      console.log(`[fixStandardPricesStatus] Found ${approvedPrices.length} Standard Prices with status='Approved'`);
-
-      // อัปเดตทีละตัว
-      for (const price of approvedPrices) {
-        await this.standardPriceRepository.update(price.id, {
-          status: 'Active'
-        });
-        console.log(`[fixStandardPricesStatus] Updated ${price.id} to status='Active'`);
-      }
-
-      // เปิด FK check กลับ
-      await this.standardPriceRepository.query('PRAGMA foreign_keys = ON');
-
-      console.log('[fixStandardPricesStatus] Successfully fixed all Standard Prices status');
-
-      return {
-        success: true,
-        message: `Fixed ${approvedPrices.length} Standard Prices from 'Approved' to 'Active'`,
-        count: approvedPrices.length
-      };
-    } catch (error) {
-      console.error('[fixStandardPricesStatus] Error:', error);
-      throw error;
+    // 🔥 ถ้าเป็น Draft → ลบได้จริงๆ
+    if (rate.status === 'Draft') {
+      await this.exchangeRateMasterDataRepository.remove(rate);
+      return { message: `Permanently deleted Draft Exchange Rate Master Data with ID ${id}` };
     }
+
+    // 🔥 ถ้าเป็น Active หรือ Archived → ห้ามลบ
+    throw new BadRequestException(`Cannot delete ${rate.status} record. Only Draft versions can be deleted.`);
   }
+
+  // 🗑️ REMOVED: fixStandardPricesStatus - Standard Price is read-only from MongoDB (no status field)
 }
+ 

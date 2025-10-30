@@ -1,6 +1,6 @@
 // path: server/src/price-calculation/price-calculation.service.ts
-// version: 3.4 (Remove FAB Cost (Product) from calculation)
-// last-modified: 27 ตุลาคม 2568 16:40
+// version: 4.1 (Remove RawMaterialFabCost - No longer used)
+// last-modified: 29 ตุลาคม 2568 23:35
 
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -13,7 +13,7 @@ import { BOM } from '../entities/bom.entity';
 import { StandardPrice } from '../entities/standard-price.entity';
 import { LmeMasterData } from '../entities/lme-master-data.entity';
 import { FabCost } from '../entities/fab-cost.entity';
-import { RawMaterialFabCost } from '../entities/raw-material-fab-cost.entity';
+// REMOVED: RawMaterialFabCost - ไม่ใช้แล้ว ใช้ FabCost (Product FAB Cost) แทน
 import { SellingFactor } from '../entities/selling-factor.entity';
 import { ExchangeRateMasterData } from '../entities/exchange-rate-master-data.entity';
 import { PricingFormula } from '../entities/pricing-formula.entity';
@@ -22,6 +22,13 @@ import { ActivityLogService } from '../activity-log/activity-log.service';
 import { FormulaEngineService } from '../formula-engine/formula-engine.service';
 import { RuleEngineService } from '../rule-engine/rule-engine.service';
 import { PricingContext, AppliedRule } from './pricing-context.interface';
+import { Currency } from '../entities/currency.entity';
+// ✅ Phase 2: Customer Group Override Entities
+import { CustomerGroupFABCostOverride } from '../entities/customer-group-fab-cost-override.entity';
+import { CustomerGroupSellingFactorOverride } from '../entities/customer-group-selling-factor-override.entity';
+import { CustomerGroupLMEPriceOverride } from '../entities/customer-group-lme-price-override.entity';
+import { CustomerGroupExchangeRateOverride } from '../entities/customer-group-exchange-rate-override.entity';
+import { CustomerGroupStandardPriceOverride } from '../entities/customer-group-standard-price-override.entity';
 
 export interface CalculationInput {
   productId: string;
@@ -131,8 +138,7 @@ export class PriceCalculationService {
     @InjectRepository(FabCost)
     private fabCostRepository: Repository<FabCost>,
 
-    @InjectRepository(RawMaterialFabCost)
-    private rawMaterialFabCostRepository: Repository<RawMaterialFabCost>,
+    // REMOVED: RawMaterialFabCost repository - ไม่ใช้แล้ว
 
     @InjectRepository(SellingFactor)
     private sellingFactorRepository: Repository<SellingFactor>,
@@ -146,10 +152,50 @@ export class PriceCalculationService {
     @InjectRepository(PricingRule)
     private pricingRuleRepository: Repository<PricingRule>,
 
+    @InjectRepository(Currency)
+    private currencyRepository: Repository<Currency>,
+
+    // ✅ Phase 2: Customer Group Override Repositories
+    @InjectRepository(CustomerGroupFABCostOverride)
+    private fabCostOverrideRepository: Repository<CustomerGroupFABCostOverride>,
+
+    @InjectRepository(CustomerGroupSellingFactorOverride)
+    private sellingFactorOverrideRepository: Repository<CustomerGroupSellingFactorOverride>,
+
+    @InjectRepository(CustomerGroupLMEPriceOverride)
+    private lmePriceOverrideRepository: Repository<CustomerGroupLMEPriceOverride>,
+
+    @InjectRepository(CustomerGroupExchangeRateOverride)
+    private exchangeRateOverrideRepository: Repository<CustomerGroupExchangeRateOverride>,
+
+    @InjectRepository(CustomerGroupStandardPriceOverride)
+    private standardPriceOverrideRepository: Repository<CustomerGroupStandardPriceOverride>,
+
     private activityLogService: ActivityLogService,
     private formulaEngineService: FormulaEngineService,
     private ruleEngineService: RuleEngineService,
   ) {}
+
+  private normalizeCurrencyCode(code?: string | null): string {
+    return (code || '').trim().toUpperCase();
+  }
+
+  private async resolveCurrencyCodeOrDefault(code?: string | null): Promise<string> {
+    const normalized = this.normalizeCurrencyCode(code);
+    const target = normalized || 'THB';
+
+    const currency = await this.currencyRepository.findOne({
+      where: { code: target, isActive: true },
+    });
+
+    if (!currency) {
+      throw new NotFoundException(
+        `Currency '${target}' is not configured in master data. Please add it before performing calculations.`,
+      );
+    }
+
+    return target;
+  }
 
   /**
    * คำนวณราคาทั้งหมดสำหรับ Product
@@ -254,7 +300,9 @@ export class PriceCalculationService {
     const marginPercentage = (marginAmount / totalCost) * 100;
 
     // 9.5 Multi-Currency Support (✅ แปลงจาก THB → สกุลที่ต้องการ)
-    const requestedCurrency = input.currency || 'THB';
+    const requestedCurrency = await this.resolveCurrencyCodeOrDefault(
+      input.currency,
+    );
     let exchangeRateToRequestedCurrency = 1; // Default THB → THB
     let sellingPriceInRequestedCurrency = sellingPrice; // Default = THB
     let sellingPricePerUnitInRequestedCurrency = sellingPricePerUnit;
@@ -486,7 +534,9 @@ export class PriceCalculationService {
     const marginPercentage = (marginAmount / totalCost) * 100;
 
     // ✅ 10.5 แปลงราคาเป็นสกุลเงินที่ลูกค้าต้องการ (THB → Target Currency)
-    const requestedCurrency = input.currency || 'THB'; // Default THB
+    const requestedCurrency = await this.resolveCurrencyCodeOrDefault(
+      input.currency,
+    ); // Default THB
     let exchangeRateToRequestedCurrency = 1; // Default THB → THB = 1
     let sellingPriceInRequestedCurrency = sellingPrice; // Default = THB
     let sellingPricePerUnitInRequestedCurrency = sellingPricePerUnit;
@@ -652,11 +702,30 @@ export class PriceCalculationService {
 
   /**
    * ดึง Standard Price จาก StandardPrice entity
+   * ✅ Phase 2: Check Customer Group Override ก่อน Master Data
    */
-  private async getStandardPrice(rawMaterialId: string): Promise<number | null> {
-    // ✅ Debug: ดูว่ามี Standard Price อะไรบ้างใน database
+  private async getStandardPrice(rawMaterialId: string, customerGroupId?: string): Promise<number | null> {
+    // ✅ 1. ถ้ามี customerGroupId ให้หา Override ก่อน
+    if (customerGroupId) {
+      const override = await this.standardPriceOverrideRepository.findOne({
+        where: {
+          customerGroupId,
+          rawMaterialId,
+          status: 'Active',
+          isActive: true,
+        },
+        order: { version: 'DESC' },
+      });
+
+      if (override) {
+        this.logger.log(`[getStandardPrice] ✅ Using Customer Group Override: RM=${rawMaterialId}, Group=${customerGroupId}, Price=${override.price}`);
+        return Number(override.price);
+      }
+    }
+
+    // ✅ 2. ถ้าไม่มี Override หรือไม่มี customerGroupId → ใช้ Master Data
     const allPrices = await this.standardPriceRepository.find({
-      where: { isActive: true, status: 'Active' },
+      where: { isActive: true },
       relations: ['rawMaterial'],
       take: 10,
     });
@@ -666,18 +735,18 @@ export class PriceCalculationService {
       where: {
         rawMaterialId,
         isActive: true,
-        status: 'Active', // ต้องเป็น Active (Approved)
       },
-      order: { version: 'DESC' },
+      order: { createdAt: 'DESC' },
     });
 
-    this.logger.log(`[getStandardPrice] RM: ${rawMaterialId}, Found: ${pricing ? 'YES' : 'NO'}, Price: ${pricing ? pricing.price : 'N/A'}, Status: ${pricing ? pricing.status : 'N/A'}, rawMaterialId: ${pricing ? pricing.rawMaterialId : 'N/A'}`);
+    this.logger.log(`[getStandardPrice] RM: ${rawMaterialId}, Found: ${pricing ? 'YES' : 'NO'}, Price: ${pricing ? pricing.price : 'N/A'}, rawMaterialId: ${pricing ? pricing.rawMaterialId : 'N/A'}`);
 
     return pricing ? Number(pricing.price) : null;
   }
 
   /**
    * ดึง LME Price จาก LmeMasterData entity
+   * ✅ Phase 2: Check Customer Group Override ก่อน Master Data
    */
   private async getLmePrice(itemGroupCode: string | null | undefined, customerGroupId?: string): Promise<number | null> {
     // ถ้าไม่มี itemGroupCode หรือเป็น null = วัตถุดิบนี้ไม่มี LME Price
@@ -685,33 +754,33 @@ export class PriceCalculationService {
       return null;
     }
 
-    // ถ้ามี customerGroupId ให้หาตาม customerGroupId ก่อน
-    let pricing = null;
-
+    // ✅ 1. ถ้ามี customerGroupId ให้หา Override ก่อน
     if (customerGroupId) {
-      pricing = await this.lmeMasterDataRepository.findOne({
+      const override = await this.lmePriceOverrideRepository.findOne({
         where: {
-          itemGroupCode,
           customerGroupId,
-          isActive: true,
+          itemGroupCode,
           status: 'Active',
+          isActive: true,
         },
         order: { version: 'DESC' },
       });
+
+      if (override) {
+        this.logger.log(`[getLmePrice] ✅ Using Customer Group Override: ItemGroup=${itemGroupCode}, Group=${customerGroupId}, Price=${override.price}`);
+        return Number(override.price);
+      }
     }
 
-    // ถ้าไม่เจอ หรือไม่มี customerGroupId ให้หาแบบทั่วไป (customerGroupId = null)
-    if (!pricing) {
-      pricing = await this.lmeMasterDataRepository.findOne({
-        where: {
-          itemGroupCode,
-          customerGroupId: IsNull(), // ต้องเป็น null (base price)
-          isActive: true,
-          status: 'Active',
-        },
-        order: { version: 'DESC' },
-      });
-    }
+    // ✅ 2. ถ้าไม่มี Override หรือไม่มี customerGroupId → ใช้ Master Data
+    const pricing = await this.lmeMasterDataRepository.findOne({
+      where: {
+        itemGroupCode,
+        isActive: true,
+        status: 'Active',
+      },
+      order: { version: 'DESC' },
+    });
 
     return pricing ? Number(pricing.price) : null;
   }
@@ -719,6 +788,8 @@ export class PriceCalculationService {
   /**
    * ดึง Raw Material FAB Cost
    * ใช้คู่กับ LME Price เพื่อคำนวณมูลค่า RM จริง
+   * ✅ Phase 2: Check Customer Group Override ก่อน Master Data
+   * ✅ UPDATED: ใช้ FabCost (Product FAB Cost) แทน RawMaterialFabCost ที่ถูกลบแล้ว
    *
    * สูตร: Unit Price = LME Price + FAB Cost
    *
@@ -730,36 +801,34 @@ export class PriceCalculationService {
     rawMaterialId: string,
     customerGroupId?: string,
   ): Promise<number> {
-    let fabCost = null;
-
-    // 1. ถ้ามี customerGroupId ให้หาตาม customerGroupId ก่อน
+    // ✅ 1. ถ้ามี customerGroupId ให้หา Override ก่อน
     if (customerGroupId) {
-      fabCost = await this.rawMaterialFabCostRepository.findOne({
+      const override = await this.fabCostOverrideRepository.findOne({
         where: {
-          rawMaterialId,
           customerGroupId,
-          isActive: true,
           status: 'Active',
+          isActive: true,
         },
         order: { version: 'DESC' },
       });
+
+      if (override) {
+        this.logger.log(`[getRawMaterialFabCost] ✅ Using Customer Group Override: Group=${customerGroupId}, FAB=${override.price}`);
+        return Number(override.price);
+      }
     }
 
-    // 2. ถ้าไม่เจอ ให้หาแบบทั่วไป (customerGroupId = null)
-    if (!fabCost) {
-      fabCost = await this.rawMaterialFabCostRepository.findOne({
-        where: {
-          rawMaterialId,
-          customerGroupId: null, // General FAB Cost
-          isActive: true,
-          status: 'Active',
-        },
-        order: { version: 'DESC' },
-      });
-    }
+    // ✅ 2. ถ้าไม่มี Override หรือไม่มี customerGroupId → ใช้ FabCost (Product FAB Cost)
+    const fabCost = await this.fabCostRepository.findOne({
+      where: {
+        isActive: true,
+        status: 'Active',
+      },
+      order: { version: 'DESC' },
+    });
 
     // Default = 0 ถ้าไม่มีการตั้งค่า FAB Cost
-    return fabCost ? Number(fabCost.fabCost) : 0;
+    return fabCost ? Number(fabCost.price) : 0;
   }
 
   /**
@@ -783,36 +852,39 @@ export class PriceCalculationService {
     });
 
     // Default FAB Cost = 0 ถ้าไม่มี
-    return pricing ? Number(pricing.costPerHour) : 0;
+    return pricing ? Number(pricing.price) : 0;
   }
 
   /**
    * ดึง Selling Factor
+   * ✅ Phase 2: Check Customer Group Override ก่อน Master Data
    */
   private async getSellingFactor(customerGroupId?: string): Promise<number> {
-    let pricing = null;
-
+    // ✅ 1. ถ้ามี customerGroupId ให้หา Override ก่อน
     if (customerGroupId) {
-      pricing = await this.sellingFactorRepository.findOne({
+      const override = await this.sellingFactorOverrideRepository.findOne({
         where: {
           customerGroupId,
-          isActive: true,
           status: 'Active',
+          isActive: true,
         },
         order: { version: 'DESC' },
       });
+
+      if (override) {
+        this.logger.log(`[getSellingFactor] ✅ Using Customer Group Override: Group=${customerGroupId}, Factor=${override.factor}`);
+        return Number(override.factor);
+      }
     }
 
-    // ถ้าไม่เจอตาม customerGroupId ให้หาแบบทั่วไป (customerGroupId = null)
-    if (!pricing) {
-      pricing = await this.sellingFactorRepository.findOne({
-        where: {
-          isActive: true,
-          status: 'Active',
-        },
-        order: { version: 'DESC' },
-      });
-    }
+    // ✅ 2. ถ้าไม่มี Override หรือไม่มี customerGroupId → ใช้ Master Data
+    const pricing = await this.sellingFactorRepository.findOne({
+      where: {
+        isActive: true,
+        status: 'Active',
+      },
+      order: { version: 'DESC' },
+    });
 
     // Default Selling Factor = 1.25 (25% markup)
     return pricing ? Number(pricing.factor) : 1.25;
@@ -822,84 +894,57 @@ export class PriceCalculationService {
    * ดึง Exchange Rate (USD to THB)
    */
   private async getExchangeRate(customerGroupId?: string): Promise<number> {
-    let pricing = null;
-
-    if (customerGroupId) {
-      pricing = await this.exchangeRateRepository.findOne({
-        where: {
-          customerGroupId,
-          sourceCurrencyCode: 'USD',
-          destinationCurrencyCode: 'THB',
-          isActive: true,
-          status: 'Active',
-        },
-        order: { version: 'DESC' },
-      });
-    }
-
-    // ถ้าไม่เจอตาม customerGroupId ให้หาแบบทั่วไป
-    if (!pricing) {
-      pricing = await this.exchangeRateRepository.findOne({
-        where: {
-          sourceCurrencyCode: 'USD',
-          destinationCurrencyCode: 'THB',
-          isActive: true,
-          status: 'Active',
-        },
-        order: { version: 'DESC' },
-      });
-    }
-
-    // Default Exchange Rate = 35 THB/USD
-    return pricing ? Number(pricing.rate) : 35.0;
+    return this.getExchangeRateFromThbToCurrency('USD', customerGroupId);
   }
 
   /**
    * ✅ ดึง Exchange Rate สำหรับแปลงจาก THB → Target Currency
+   * ✅ Phase 2: Check Customer Group Override ก่อน Master Data
    * ตัวอย่าง: 1 USD = 35 THB → rate = 35
    */
   private async getExchangeRateFromThbToCurrency(targetCurrency: string, customerGroupId?: string): Promise<number> {
-    let pricing = null;
+    const destinationCode = await this.resolveCurrencyCodeOrDefault(
+      targetCurrency,
+    );
 
-    // ✅ หา rate แบบ THB → Target Currency
+    if (destinationCode === 'THB') {
+      return 1;
+    }
+
+    // ✅ 1. ถ้ามี customerGroupId ให้หา Override ก่อน
     if (customerGroupId) {
-      pricing = await this.exchangeRateRepository.findOne({
+      const override = await this.exchangeRateOverrideRepository.findOne({
         where: {
           customerGroupId,
           sourceCurrencyCode: 'THB',
-          destinationCurrencyCode: targetCurrency,
-          isActive: true,
+          destinationCurrencyCode: destinationCode,
           status: 'Active',
+          isActive: true,
         },
         order: { version: 'DESC' },
       });
+
+      if (override) {
+        this.logger.log(`[getExchangeRateFromThbToCurrency] ✅ Using Customer Group Override: Group=${customerGroupId}, THB→${destinationCode}, Rate=${override.rate}`);
+        return Number(override.rate);
+      }
     }
 
-    if (!pricing) {
-      pricing = await this.exchangeRateRepository.findOne({
-        where: {
-          sourceCurrencyCode: 'THB',
-          destinationCurrencyCode: targetCurrency,
-          isActive: true,
-          status: 'Active',
-        },
-        order: { version: 'DESC' },
-      });
-    }
+    // ✅ 2. ถ้าไม่มี Override หรือไม่มี customerGroupId → ใช้ Master Data
+    const pricing = await this.exchangeRateRepository.findOne({
+      where: {
+        sourceCurrencyCode: 'THB',
+        destinationCurrencyCode: destinationCode,
+        isActive: true,
+        status: 'Active',
+      },
+      order: { version: 'DESC' },
+    });
 
     if (!pricing) {
-      // ✅ ถ้าไม่พบ ให้ใช้ค่า default (1 สกุลเงิน = X บาท)
-      const defaultRates: Record<string, number> = {
-        USD: 35.0,   // 1 USD = 35 THB
-        EUR: 38.0,   // 1 EUR = 38 THB
-        JPY: 0.24,   // 1 JPY = 0.24 THB
-        CNY: 4.85,   // 1 CNY = 4.85 THB
-        SGD: 26.0,   // 1 SGD = 26 THB
-      };
-
-      const rate = defaultRates[targetCurrency] || 1.0;
-      this.logger.warn(`Exchange rate for THB → ${targetCurrency} not found, using default rate: 1 ${targetCurrency} = ${rate} THB`);
-      return rate;
+      throw new NotFoundException(
+        `ไม่พบ Exchange Rate สำหรับ THB → ${destinationCode} ในระบบ. กรุณาตั้งค่าใน Exchange Rate Master Data ก่อนทำการคำนวณ.`,
+      );
     }
 
     return Number(pricing.rate);
@@ -919,12 +964,14 @@ export class PriceCalculationService {
   private async getMasterDataVersions(customerGroupId?: string): Promise<any> {
     const versions: any = {};
 
-    // Standard Price Version (ใช้ version ล่าสุด)
+    // Standard Price Version (ใช้ record ล่าสุด)
     const standardPrice = await this.standardPriceRepository.findOne({
-      where: { isActive: true, status: 'Active' },
-      order: { version: 'DESC' },
+      where: { isActive: true },
+      order: { createdAt: 'DESC' },
     });
-    if (standardPrice) versions.standardPriceVersion = standardPrice.version;
+    if (standardPrice) {
+      versions.standardPriceId = standardPrice.id;
+    }
 
     // Exchange Rate Version
     const exchangeRate = await this.exchangeRateRepository.findOne({
@@ -936,28 +983,40 @@ export class PriceCalculationService {
       },
       order: { version: 'DESC' },
     });
-    if (exchangeRate) versions.exchangeRateVersion = exchangeRate.version;
+    if (exchangeRate) {
+      versions.exchangeRateVersion = exchangeRate.version;
+      versions.exchangeRateId = exchangeRate.id;
+    }
 
     // LME Price Version
     const lmePrice = await this.lmeMasterDataRepository.findOne({
       where: { isActive: true, status: 'Active' },
       order: { version: 'DESC' },
     });
-    if (lmePrice) versions.lmePriceVersion = lmePrice.version;
+    if (lmePrice) {
+      versions.lmePriceVersion = lmePrice.version;
+      versions.lmePriceId = lmePrice.id;
+    }
 
     // FAB Cost Version
     const fabCost = await this.fabCostRepository.findOne({
       where: { isActive: true, status: 'Active' },
       order: { version: 'DESC' },
     });
-    if (fabCost) versions.fabCostVersion = fabCost.version;
+    if (fabCost) {
+      versions.fabCostVersion = fabCost.version;
+      versions.fabCostId = fabCost.id;
+    }
 
     // Selling Factor Version
     const sellingFactor = await this.sellingFactorRepository.findOne({
       where: { isActive: true, status: 'Active' },
       order: { version: 'DESC' },
     });
-    if (sellingFactor) versions.sellingFactorVersion = sellingFactor.version;
+    if (sellingFactor) {
+      versions.sellingFactorVersion = sellingFactor.version;
+      versions.sellingFactorId = sellingFactor.id;
+    }
 
     return versions;
   }

@@ -1,6 +1,6 @@
 // path: server/src/entities/exchange-rate-history.entity.ts
-// version: 1.0 (Exchange Rate History Entity)
-// last-modified: 1 ตุลาคม 2568 13:40
+// version: 3.0 (Standardize Field Names - createdBy/createdAt, Remove source)
+// last-modified: 29 ตุลาคม 2568 08:00
 
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
 
@@ -9,31 +9,31 @@ export class ExchangeRateHistory {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column()
-  exchangeRateId: string; // Reference to original ExchangeRate
+  @Column({ nullable: true })
+  exchangeRateId: string; // Reference to original ExchangeRateMasterData
 
-  @Column()
+  @Column({ nullable: true })
   version: number;
 
-  @Column()
+  @Column({ nullable: true })
   sourceCurrencyCode: string;
 
-  @Column()
+  @Column({ nullable: true })
   sourceCurrencyName: string;
 
-  @Column()
+  @Column({ nullable: true })
   destinationCurrencyCode: string;
 
-  @Column()
+  @Column({ nullable: true })
   destinationCurrencyName: string;
 
-  @Column('decimal', { precision: 10, scale: 6 })
+  @Column('decimal', { precision: 10, scale: 6, nullable: true })
   rate: number;
 
   @Column({ nullable: true })
-  source: string;
+  description: string;
 
-  @Column()
+  @Column({ nullable: true })
   status: string; // DRAFT, PENDING_APPROVAL, APPROVED, ARCHIVED
 
   @Column({ nullable: true })
@@ -48,15 +48,12 @@ export class ExchangeRateHistory {
   @Column({ type: 'datetime', nullable: true })
   effectiveTo: Date;
 
-  @Column()
-  changedBy: string;
+  @Column({ nullable: true })
+  createdBy: string; // User ID who created this history record
 
   @CreateDateColumn()
-  changedAt: Date;
+  createdAt: Date; // When this history record was created
 
   @Column({ type: 'text', nullable: true })
   changeReason: string;
-
-  @Column()
-  action: string; // 'CREATE', 'UPDATE', 'APPROVE', 'ARCHIVE'
 }

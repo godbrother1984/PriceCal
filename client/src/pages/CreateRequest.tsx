@@ -2,11 +2,12 @@
 // version: 5.2 (Add Quantity and Currency fields for order details)
 // last-modified: 24 ตุลาคม 2568 09:45
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import api from '../services/api'; // ✅ ใช้ centralized api instance ที่มี JWT interceptor
 import eventBus, { EVENTS } from '../services/eventBus';
 import ApprovalWorkflow from '../components/ApprovalWorkflow';
 import ItemStatusBadge from '../components/ItemStatusBadge';
+import { useCurrencies, FALLBACK_CURRENCIES } from '../hooks/useCurrencies';
 
 // --- Interfaces ---
 interface CreateRequestProps {
@@ -76,7 +77,32 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
   const [customerType, setCustomerType] = useState<'existing' | 'new'>('existing');
   const [productType, setProductType] = useState<'existing' | 'new'>('existing');
   const [formData, setFormData] = useState<FormData>({});
-  
+
+  const {
+    currencies,
+    loading: currenciesLoading,
+    error: currenciesError,
+  } = useCurrencies();
+
+  const currencyOptions = useMemo(() => {
+    if (currencies.length > 0) {
+      return currencies;
+    }
+
+    return FALLBACK_CURRENCIES;
+  }, [currencies]);
+
+  useEffect(() => {
+    if (!formData.currency && currencyOptions.length > 0) {
+      const preferred = currencyOptions.find((item) => item.code === 'THB') ?? currencyOptions[0];
+      setFormData((prev) => ({
+        ...prev,
+        currency: preferred.code,
+      }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currencyOptions]);
+
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [specialRequests, setSpecialRequests] = useState<SpecialRequest[]>([]);
   const [newSpecialRequest, setNewSpecialRequest] = useState({ description: '', category: '' });
@@ -605,18 +631,26 @@ const CreateRequest: React.FC<CreateRequestProps> = ({ onCancel, onSuccess, requ
                     <select
                       value={formData.currency || ''}
                       onChange={(e) => handleFormChange('currency', e.target.value)}
-                      disabled={isReadonly}
+                      disabled={
+                        isReadonly ||
+                        (currenciesLoading && currencies.length === 0)
+                      }
                       className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
                       required
                     >
                       <option value="">เลือกสกุลเงิน</option>
-                      <option value="THB">THB - บาทไทย</option>
-                      <option value="USD">USD - ดอลลาร์สหรัฐ</option>
-                      <option value="EUR">EUR - ยูโร</option>
-                      <option value="JPY">JPY - เยนญี่ปุ่น</option>
-                      <option value="CNY">CNY - หยวนจีน</option>
-                      <option value="SGD">SGD - ดอลลาร์สิงคโปร์</option>
+                      {currencyOptions.map((currency) => (
+                        <option key={currency.code} value={currency.code}>
+                          {currency.code} - {currency.name}
+                        </option>
+                      ))}
                     </select>
+                    {currenciesLoading && currencies.length === 0 && (
+                      <p className="mt-1 text-xs text-slate-400">กำลังโหลดรายการสกุลเงิน...</p>
+                    )}
+                    {currenciesError && (
+                      <p className="mt-1 text-xs text-red-500">{currenciesError}</p>
+                    )}
                     <p className="mt-1 text-xs text-slate-500">สกุลเงินที่ลูกค้าต้องการให้เสนอราคา</p>
                   </div>
                 </div>

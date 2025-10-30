@@ -1,15 +1,17 @@
 // path: server/src/entities/lme-master-data.entity.ts
-// version: 1.0 (LME Price Master Data for Calculation)
-// last-modified: 1 ตุลาคม 2568 18:55
+// version: 2.0 (Global Default - Removed customerGroupId)
+// last-modified: 29 ตุลาคม 2568 04:05
 
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
 import { VersionedEntity } from './base.entity';
-import { CustomerGroup } from './customer-group.entity';
 
 /**
- * LME Price Master Data
+ * LME Price Master Data (Global Default)
  * ข้อมูลราคา LME ที่พนักงานกำหนดไว้สำหรับการคำนวณ
  * ไม่ได้เปลี่ยนแปลงทุกวัน - ใช้เป็นราคาคงที่ในการคำนวณ
+ *
+ * v2.0: เป็น Global Default (ไม่ผูกกับ Customer Group)
+ * ใช้ CustomerGroupLMEPriceOverride สำหรับ Group-specific pricing
  */
 @Entity('lme_master_data')
 export class LmeMasterData extends VersionedEntity {
@@ -29,14 +31,7 @@ export class LmeMasterData extends VersionedEntity {
   currency: string;
 
   @Column({ nullable: true })
-  customerGroupId: string; // FK to customer_groups
-
-  @Column({ nullable: true })
   description: string;
-
-  @ManyToOne(() => CustomerGroup)
-  @JoinColumn({ name: 'customerGroupId' })
-  customerGroup: CustomerGroup;
 
   // Note: version, status, approvedBy, approvedAt, effectiveFrom, effectiveTo,
   // isActive, changeReason, createdAt, updatedAt, createdBy, updatedBy

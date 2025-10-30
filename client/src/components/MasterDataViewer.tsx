@@ -1,11 +1,11 @@
 // path: client/src/components/MasterDataViewer.tsx
-// version: 1.2 (Use Centralized API with JWT Authentication)
-// last-modified: 14 ตุลาคม 2568 15:50
+// version: 1.5 (Add Tube Size column for Finished Goods)
+// last-modified: 30 ตุลาคม 2568 00:41
 
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 
-type DataType = 'rawMaterials' | 'finishedGoods' | 'customers' | 'employees';
+type DataType = 'rawMaterials' | 'finishedGoods' | 'customers' | 'employees' | 'standardPrices';
 
 const MasterDataViewer: React.FC = () => {
   const [selectedType, setSelectedType] = useState<DataType>('rawMaterials');
@@ -36,12 +36,26 @@ const MasterDataViewer: React.FC = () => {
           // TODO: Create employees endpoint
           endpoint = '/api/data/employees';
           break;
+        case 'standardPrices':
+          endpoint = '/api/data/standard-prices';
+          break;
       }
 
       const response = await api.get(endpoint);
 
-      if (response.data.success) {
-        setData(response.data.data || []);
+      // Handle different response formats
+      if (Array.isArray(response.data)) {
+        // API returns array directly
+        setData(response.data);
+      } else if (response.data.success && response.data.data) {
+        // API returns {success: true, data: [...]}
+        setData(response.data.data);
+      } else if (response.data.data) {
+        // API returns {data: [...]}
+        setData(Array.isArray(response.data.data) ? response.data.data : []);
+      } else {
+        // No data found
+        setData([]);
       }
     } catch (error) {
       console.error('Error loading data:', error);
@@ -101,7 +115,7 @@ const MasterDataViewer: React.FC = () => {
 
       {/* Data Type Selector */}
       <div className="bg-white rounded-lg shadow p-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <button
             onClick={() => setSelectedType('rawMaterials')}
             className={`p-4 rounded-lg border-2 transition-all ${
@@ -144,6 +158,21 @@ const MasterDataViewer: React.FC = () => {
             <div className="font-semibold text-sm">Customers</div>
             <div className="text-xs text-slate-500 mt-1">
               {selectedType === 'customers' ? data.length : 0} รายการ
+            </div>
+          </button>
+
+          <button
+            onClick={() => setSelectedType('standardPrices')}
+            className={`p-4 rounded-lg border-2 transition-all ${
+              selectedType === 'standardPrices'
+                ? 'border-blue-500 bg-blue-50'
+                : 'border-slate-200 hover:border-blue-300'
+            }`}
+          >
+            <div className="text-2xl mb-2">💰</div>
+            <div className="font-semibold text-sm">Standard Prices</div>
+            <div className="text-xs text-slate-500 mt-1">
+              {selectedType === 'standardPrices' ? data.length : 0} รายการ
             </div>
           </button>
 
@@ -237,105 +266,149 @@ const MasterDataViewer: React.FC = () => {
             <table className="w-full">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                    ID
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                    Name
-                  </th>
-                  {selectedType === 'rawMaterials' && (
+                  {/* Standard Prices: Different structure (no generic ID/Name) */}
+                  {selectedType === 'standardPrices' ? (
                     <>
                       <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                        Category
+                        Raw Material ID
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                        Unit
+                        Raw Material Name
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                        Price
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                        Currency
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                        Last Synced
+                      </th>
+                    </>
+                  ) : (
+                    <>
+                      {/* Other Data Types: Generic structure */}
+                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                        ID
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                        Name
+                      </th>
+                      {selectedType === 'rawMaterials' && (
+                        <>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                            Category
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                            Unit
+                          </th>
+                        </>
+                      )}
+                      {selectedType === 'finishedGoods' && (
+                        <>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                            Category
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                            Tube Size
+                          </th>
+                        </>
+                      )}
+                      {selectedType === 'customers' && (
+                        <>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                            Email
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                            Phone
+                          </th>
+                        </>
+                      )}
+                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                        Source
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                        Last Synced
                       </th>
                     </>
                   )}
-                  {selectedType === 'finishedGoods' && (
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                      Category
-                    </th>
-                  )}
-                  {selectedType === 'customers' && (
-                    <>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                        Email
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                        Phone
-                      </th>
-                    </>
-                  )}
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                    Source
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                    Last Synced
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                    Status
-                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-slate-200">
                 {filteredData.map((item, index) => (
                   <tr key={item.id || index} className="hover:bg-slate-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">
-                      {item.id}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-700">
-                      {item.name}
-                    </td>
-                    {selectedType === 'rawMaterials' && (
+                    {/* Standard Prices: Different structure */}
+                    {selectedType === 'standardPrices' ? (
                       <>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                          {item.category || '-'}
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">
+                          {item.rawMaterialId || '-'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-700">
+                          {item.rawMaterial?.name || '-'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900 font-medium">
+                          {item.price?.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2}) || '-'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                          {item.unit || '-'}
+                          {item.currency || '-'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                          {formatDate(item.lastSyncedAt || item.updatedAt)}
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        {/* Other Data Types: Generic structure */}
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">
+                          {item.id}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-700">
+                          {item.name}
+                        </td>
+                        {selectedType === 'rawMaterials' && (
+                          <>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                              {item.category || '-'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                              {item.unit || '-'}
+                            </td>
+                          </>
+                        )}
+                        {selectedType === 'finishedGoods' && (
+                          <>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                              {item.category || '-'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                              {item.tubeSize || '-'}
+                            </td>
+                          </>
+                        )}
+                        {selectedType === 'customers' && (
+                          <>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                              {item.email || '-'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                              {item.phone || '-'}
+                            </td>
+                          </>
+                        )}
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getSourceBadgeColor(
+                              item.sourceSystem || item.source
+                            )}`}
+                          >
+                            {item.sourceSystem || item.source || 'Manual'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                          {formatDate(item.lastSyncedAt || item.lastSyncAt)}
                         </td>
                       </>
                     )}
-                    {selectedType === 'finishedGoods' && (
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                        {item.category || '-'}
-                      </td>
-                    )}
-                    {selectedType === 'customers' && (
-                      <>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                          {item.email || '-'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                          {item.phone || '-'}
-                        </td>
-                      </>
-                    )}
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getSourceBadgeColor(
-                          item.sourceSystem
-                        )}`}
-                      >
-                        {item.sourceSystem || 'Manual'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                      {formatDate(item.lastSyncedAt)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          item.isActive
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-red-100 text-red-800'
-                        }`}
-                      >
-                        {item.isActive ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
                   </tr>
                 ))}
               </tbody>

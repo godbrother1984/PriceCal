@@ -1,6 +1,6 @@
 // path: server/src/entities/fab-cost-history.entity.ts
-// version: 1.0 (Fab Cost History Entity)
-// last-modified: 1 ตุลาคม 2568 17:20
+// version: 4.3 (Change costPerHour to price)
+// last-modified: 30 ตุลาคม 2568 10:59
 
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
 
@@ -16,10 +16,13 @@ export class FabCostHistory {
   version: number; // Version number
 
   @Column({ nullable: true })
-  name: string;
+  itemGroupName: string; // Item Group Name (Aluminum, Copper, etc.)
+
+  @Column({ nullable: true })
+  itemGroupCode: string; // Item Group Code (AL, CU, ST, etc.) to match with LME and Raw Materials
 
   @Column('decimal', { precision: 10, scale: 2, nullable: true })
-  costPerHour: number;
+  price: number; // FAB Cost Price (not per hour)
 
   @Column({ nullable: true })
   currency: string;
@@ -43,14 +46,11 @@ export class FabCostHistory {
   effectiveTo: Date;
 
   @Column({ nullable: true })
-  changedBy: string; // User ID who made this change
+  createdBy: string; // User ID who created this history record
 
   @CreateDateColumn()
-  changedAt: Date; // When this history record was created
+  createdAt: Date; // When this history record was created
 
   @Column({ type: 'text', nullable: true })
   changeReason: string; // Reason for this change
-
-  @Column({ nullable: true })
-  action: string; // 'CREATE', 'UPDATE', 'APPROVE', 'ARCHIVE'
 }

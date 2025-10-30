@@ -95,7 +95,7 @@ const PriceRequestList: React.FC<PriceRequestListProps> = ({ onNavigate, onEdit,
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('All');
-  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, id: string } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; request: PriceRequest } | null>(null);
 
   // Helper function to extract data from API response
   const extractApiData = (response: any): PriceRequest[] => {
@@ -220,9 +220,9 @@ const PriceRequestList: React.FC<PriceRequestListProps> = ({ onNavigate, onEdit,
     return status === 'All' ? requests.length : requests.filter(r => r.status === status).length;
   };
 
-  const handleContextMenu = (e: React.MouseEvent, requestId: string) => {
+  const handleContextMenu = (e: React.MouseEvent, request: PriceRequest) => {
     e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, id: requestId });
+    setContextMenu({ x: e.clientX, y: e.clientY, request });
   };
 
   const closeContextMenu = () => {
@@ -326,7 +326,7 @@ const PriceRequestList: React.FC<PriceRequestListProps> = ({ onNavigate, onEdit,
                     key={req.id} 
                     className="bg-white border-b hover:bg-slate-50 cursor-pointer transition-colors"
                     onDoubleClick={() => onEdit(req.id)}
-                    onContextMenu={(e) => handleContextMenu(e, req.id)}
+                    onContextMenu={(e) => handleContextMenu(e, req)}
                   >
                     <td className="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">
                       {req.id}
@@ -376,10 +376,16 @@ const PriceRequestList: React.FC<PriceRequestListProps> = ({ onNavigate, onEdit,
                           <button 
                             onClick={(e) => {
                               e.stopPropagation();
+                              if (req.status === 'Draft') return;
                               onViewPricing(req.id);
                             }} 
-                            className="text-green-600 hover:text-green-800 transition-colors p-1"
-                            title={`View pricing for ${req.id}`}
+                            className={`text-green-600 hover:text-green-800 transition-colors p-1 ${req.status === 'Draft' ? 'opacity-40 cursor-not-allowed' : ''}`}
+                            title={
+                              req.status === 'Draft'
+                                ? 'Sales must submit request before pricing'
+                                : `View pricing for ${req.id}`
+                            }
+                            disabled={req.status === 'Draft'}
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
@@ -402,13 +408,17 @@ const PriceRequestList: React.FC<PriceRequestListProps> = ({ onNavigate, onEdit,
           x={contextMenu.x}
           y={contextMenu.y}
           onEdit={() => {
-            onEdit(contextMenu.id);
+            onEdit(contextMenu.request.id);
             closeContextMenu();
           }}
-          onViewPricing={onViewPricing ? () => {
-            onViewPricing(contextMenu.id);
-            closeContextMenu();
-          } : undefined}
+          onViewPricing={
+            onViewPricing && contextMenu.request.status !== 'Draft'
+              ? () => {
+                  onViewPricing(contextMenu.request.id);
+                  closeContextMenu();
+                }
+              : undefined
+          }
           onClose={closeContextMenu}
         />
       )}

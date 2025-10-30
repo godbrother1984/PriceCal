@@ -1,6 +1,6 @@
 // path: server/src/mongodb/schemas/master-data.schema.ts
-// version: 1.0 (MongoDB Schemas for Master Data)
-// last-modified: 7 ตุลาคม 2568 17:45
+// version: 2.0 (Change Selling Factor to tubeSize)
+// last-modified: 29 ตุลาคม 2568 23:40
 
 import { Schema, Prop, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
@@ -111,13 +111,11 @@ export type FabCostDocument = FabCost & Document;
 export const FabCostSchema = SchemaFactory.createForClass(FabCost);
 
 // Selling Factor
+// v2.0: ใช้ tubeSize แทน patternName/patternCode
 @Schema({ collection: 'selling_factors' })
 export class SellingFactor extends MasterDataBase {
   @Prop({ required: true })
-  patternName: string;
-
-  @Prop({ required: true })
-  patternCode: string;
+  tubeSize: string; // Tube Size from Product (FG)
 
   @Prop({ required: true, type: Number })
   factor: number;

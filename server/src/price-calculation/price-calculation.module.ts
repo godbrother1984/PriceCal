@@ -1,6 +1,6 @@
 // path: server/src/price-calculation/price-calculation.module.ts
-// version: 5.0 (Hybrid Formula System Integration)
-// last-modified: 22 ตุลาคม 2568 17:45
+// version: 6.0 (Add Customer Group Override Support - Phase 2)
+// last-modified: 29 ตุลาคม 2568 17:35
 
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -14,7 +14,6 @@ import { BOM } from '../entities/bom.entity';
 import { StandardPrice } from '../entities/standard-price.entity';
 import { LmeMasterData } from '../entities/lme-master-data.entity';
 import { FabCost } from '../entities/fab-cost.entity';
-import { RawMaterialFabCost } from '../entities/raw-material-fab-cost.entity';
 import { SellingFactor } from '../entities/selling-factor.entity';
 import { ExchangeRateMasterData } from '../entities/exchange-rate-master-data.entity';
 import { ActivityLog } from '../entities/activity-log.entity';
@@ -23,6 +22,13 @@ import { PricingFormula } from '../entities/pricing-formula.entity';
 import { PricingRule } from '../entities/pricing-rule.entity';
 import { FormulaEngineModule } from '../formula-engine/formula-engine.module';
 import { RuleEngineModule } from '../rule-engine/rule-engine.module';
+import { Currency } from '../entities/currency.entity';
+// ✅ Phase 2: Customer Group Override Entities
+import { CustomerGroupFABCostOverride } from '../entities/customer-group-fab-cost-override.entity';
+import { CustomerGroupSellingFactorOverride } from '../entities/customer-group-selling-factor-override.entity';
+import { CustomerGroupLMEPriceOverride } from '../entities/customer-group-lme-price-override.entity';
+import { CustomerGroupExchangeRateOverride } from '../entities/customer-group-exchange-rate-override.entity';
+import { CustomerGroupStandardPriceOverride } from '../entities/customer-group-standard-price-override.entity';
 
 @Module({
   imports: [
@@ -37,12 +43,18 @@ import { RuleEngineModule } from '../rule-engine/rule-engine.module';
       StandardPrice,
       LmeMasterData,
       FabCost,
-      RawMaterialFabCost,     // ✅ FAB Cost for Raw Materials
       SellingFactor,
       ExchangeRateMasterData,
       ActivityLog,
       PricingFormula,         // ✅ Base formulas (Hybrid System)
       PricingRule,            // ✅ Custom rules (Hybrid System)
+      Currency,
+      // ✅ Phase 2: Customer Group Override Entities
+      CustomerGroupFABCostOverride,
+      CustomerGroupSellingFactorOverride,
+      CustomerGroupLMEPriceOverride,
+      CustomerGroupExchangeRateOverride,
+      CustomerGroupStandardPriceOverride,
     ]),
   ],
   controllers: [PriceCalculationController],

@@ -1,8 +1,9 @@
 // path: client/src/pages/SetupWizard.tsx
-// version: 2.1 (Props Fix and Error Correction)
-// last-modified: 31 สิงหาคม 2568
+// version: 3.0 (Use centralized API_CONFIG)
+// last-modified: 28 ตุลาคม 2568 18:10
 
 import React, { useState } from 'react';
+import { API_CONFIG } from '../config/env';
 
 interface SetupWizardProps {
   onSetupComplete: () => void;
@@ -50,7 +51,8 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onSetupComplete }) => {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:3000/setup/initialize', {
+      // ✅ ใช้ API_CONFIG.getUrl() (แก้ที่ไฟล์ config ที่เดียวแล้วจบ)
+      const response = await fetch(API_CONFIG.getUrl(API_CONFIG.ENDPOINTS.SETUP_INITIALIZE), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),

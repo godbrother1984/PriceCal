@@ -1,0 +1,62 @@
+// path: server/src/entities/customer-group-exchange-rate-override-history.entity.ts
+// version: 2.0 (Standardize Field Names - createdBy/createdAt, Remove source)
+// last-modified: 29 ตุลาคม 2568 08:00
+
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
+
+@Entity('customer_group_exchange_rate_override_history')
+export class CustomerGroupExchangeRateOverrideHistory {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column()
+  overrideId: string;
+
+  @Column()
+  customerGroupId: string;
+
+  @Column()
+  sourceCurrencyCode: string;
+
+  @Column()
+  sourceCurrencyName: string;
+
+  @Column()
+  destinationCurrencyCode: string;
+
+  @Column()
+  destinationCurrencyName: string;
+
+  @Column('decimal', { precision: 10, scale: 6 })
+  rate: number;
+
+  @Column({ type: 'text', nullable: true })
+  description: string;
+
+  @Column()
+  version: number;
+
+  @Column()
+  status: string;
+
+  @Column({ nullable: true })
+  approvedBy: string;
+
+  @Column({ type: 'datetime', nullable: true })
+  approvedAt: Date;
+
+  @Column({ type: 'datetime', nullable: true })
+  effectiveFrom: Date;
+
+  @Column({ type: 'datetime', nullable: true })
+  effectiveTo: Date;
+
+  @Column()
+  createdBy: string;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @Column({ type: 'text', nullable: true })
+  changeReason: string;
+}

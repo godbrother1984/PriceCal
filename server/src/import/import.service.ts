@@ -1,6 +1,6 @@
 // path: server/src/import/import.service.ts
-// version: 5.1 (Optional MongoDB Services)
-// last-modified: 14 ตุลาคม 2568 16:00
+// version: 5.2 (Add tubeSize sync from MongoDB)
+// last-modified: 29 ตุลาคม 2568 23:30
 
 import { Injectable, Logger, BadRequestException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -256,6 +256,7 @@ export class ImportService {
             description: item.description,
             category: item.category || item.itemGroup,
             unit: item.unit || 'unit',
+            tubeSize: item.tubeSize || null, // ✅ Tube Size for Selling Factor
             isActive: item.isActive !== undefined ? item.isActive : true,
             externalId: item.externalId || item._id?.toString(),
             lastSyncAt: new Date(),

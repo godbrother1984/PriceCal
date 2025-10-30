@@ -33,7 +33,18 @@
       "Bash(del database.sqlite)",
       "Bash(del \"c:\\Project\\PriceCal\\server\\src\\entities\\master-pricing.entity.ts\")",
       "Bash(test:*)",
-      "Bash(npm run test)"
+      "Bash(npm run test)",
+      "Bash(copy:*)",
+      "Bash(del serverdatabase.sqlite)",
+      "Bash(node test-exchange-rates.js:*)",
+      "Bash(node test-price-calculation.js:*)",
+      "Bash(node fix-exchange-rate-status.js:*)",
+      "Bash(node check-exchange-rates.js:*)",
+      "Bash(node check-selling-factors.js:*)",
+      "Bash(node test-api-selling-factors.js:*)",
+      "Bash(node:*)",
+      "Bash(del \"c:\\Project\\PriceCal\\server\\src\\entities\\raw-material-fab-cost.entity.ts\")",
+      "Bash(xargs kill:*)"
     ]
   }
 }

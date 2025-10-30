@@ -1,6 +1,6 @@
 // path: server/src/entities/activity-log.entity.ts
-// version: 1.0 (Activity Log Entity)
-// last-modified: 29 กันยายน 2568 16:45
+// version: 1.1 (Fix Foreign Key - Make priceRequest nullable)
+// last-modified: 29 ตุลาคม 2568 00:50
 
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { User } from './user.entity';
@@ -61,7 +61,7 @@ export class ActivityLog {
   @JoinColumn({ name: 'userId' })
   user: User;
 
-  @ManyToOne(() => PriceRequest)
+  @ManyToOne(() => PriceRequest, { nullable: true })
   @JoinColumn({ name: 'requestId' })
   priceRequest: PriceRequest;
 }
